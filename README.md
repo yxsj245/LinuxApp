@@ -52,6 +52,8 @@ LinuxApp/
 
 网页不依赖构建工具或后端接口。部署时请保持 `index.html` 与 `main.sh` 的相对位置不变，例如使用 Nginx、GitHub Pages、对象存储静态网站或其他静态文件服务。
 
+在线脚本默认从 `https://linuxapp.xiaozhuhouses.asia/` 加载。需要临时切换到其他镜像时，可通过 `LINUXAPP_BASE_URL` 环境变量覆盖默认地址。
+
 网页已有应用和命令清单位于 `index.html` 内的 `apps` 数组。新增应用或命令后，请同步更新该数组。
 
 ## 兼容性

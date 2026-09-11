@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # 统一远程脚本地址。部署时可以通过环境变量覆盖。
-LINUXAPP_BASE_URL=${LINUXAPP_BASE_URL:-}
+LINUXAPP_BASE_URL=${LINUXAPP_BASE_URL:-https://linuxapp.xiaozhuhouses.asia/}
 LINUXAPP_CACHE_TTL=${LINUXAPP_CACHE_TTL:-3600}
 LINUXAPP_CONNECT_TIMEOUT=${LINUXAPP_CONNECT_TIMEOUT:-10}
 
@@ -14,4 +14,4 @@ linuxapp_script_override_url() {
     esac
 }
 
-# Last updated: 2026-09-11 19:00
+# Last updated: 2026-09-11 21:08
