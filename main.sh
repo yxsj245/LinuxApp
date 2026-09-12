@@ -317,7 +317,7 @@ show_dashboard() {
     ui_section '功能区'
     ui_menu_item '1.' '应用管理'
     ui_menu_item '2.' 'SSH 登录钩子管理'
-    ui_menu_item '3.' '刷新状态'
+    ui_menu_item 'R.' '刷新状态'
     ui_menu_item '0.' '退出'
     printf '\n'
 }
@@ -471,11 +471,15 @@ module_actions_menu() {
             module_action_index=$((module_action_index + 1))
             ui_menu_item "$module_action_index." "${module_action_pair#*:}"
         done
-        ui_menu_item '0.' '返回'
+        ui_menu_item 'b.' '返回'
         read_key || return 1
         action_name=''
         case "$READ_KEY" in
-            0) return 0 ;;
+            b|B) return 0 ;;
+            0)
+                ui_warn '返回请按 b。'
+                continue
+                ;;
             *[!0-9]*)
                 if input_key_is_blank "$READ_KEY"; then
                     continue
@@ -550,10 +554,43 @@ module_list_menu() {
         done < "$LINUXAPP_ROOT/config/modules.list"
         [ "$list_found" -eq 1 ] || ui_text '暂无可用模块。'
         printf '\n'
-        ui_menu_item '0.' '返回'
-        read_key || return 1
-        [ "$READ_KEY" = 0 ] && return 0
-        find_module_by_index "$list_type" "$READ_KEY"
+        ui_menu_item 'b.' '返回'
+        if [ "$list_type" = software ]; then
+            # 软件模块后续会继续增加，编号可能超过一位，因此使用普通输入模式：
+            # 输入编号后按回车确认；按 b 仍然立即返回，不需要回车。
+            printf '%s输入编号后按回车确认：%s' "$UI_SECONDARY" "$UI_RESET"
+            read_line || return 1
+            list_reply=$READ_LINE
+        else
+            read_key || return 1
+            list_reply=$READ_KEY
+        fi
+        case "$list_reply" in
+            b|B) return 0 ;;
+        esac
+        if input_key_is_blank "$list_reply"; then
+            continue
+        fi
+        if [ "$list_reply" = 0 ]; then
+            ui_warn '返回请按 b。'
+            continue
+        fi
+        if [ "$list_type" = software ]; then
+            case "$list_reply" in
+                *[!0-9]*)
+                    ui_warn '无效选择，请输入列表中的数字编号。'
+                    continue
+                    ;;
+            esac
+            # 去掉编号的前导 0，输入 01、007 也能匹配到对应序号。
+            while :; do
+                case "$list_reply" in
+                    0[0-9]*) list_reply=${list_reply#0} ;;
+                    *) break ;;
+                esac
+            done
+        fi
+        find_module_by_index "$list_type" "$list_reply"
         if [ "$MODULE_FOUND" -eq 1 ]; then
             module_actions_menu "$MODULE_TYPE" "$MODULE_LABEL" "$MODULE_PATH"
         else
@@ -569,12 +606,15 @@ application_menu() {
         ui_section '应用管理'
         ui_menu_item '1.' '软件模块'
         ui_menu_item '2.' '语言模块'
-        ui_menu_item '0.' '返回'
+        ui_menu_item 'b.' '返回'
         read_key || return 1
         case "$READ_KEY" in
             1) module_list_menu software '软件模块' ;;
             2) module_list_menu language '语言模块' ;;
-            0) return 0 ;;
+            b|B) return 0 ;;
+            0)
+                ui_warn '返回请按 b。'
+                ;;
             *)
                 if ! input_key_is_blank "$READ_KEY"; then
                     ui_warn '无效选择。'
@@ -591,12 +631,15 @@ ssh_menu() {
         ui_section 'SSH 登录钩子管理'
         ui_menu_item '1.' '安装当前用户登录钩子'
         ui_menu_item '2.' '移除当前用户登录钩子'
-        ui_menu_item '0.' '返回'
+        ui_menu_item 'b.' '返回'
         read_key || return 1
         case "$READ_KEY" in
             1) ssh_hook_install; ui_wait_key || return 1 ;;
             2) ssh_hook_remove; ui_wait_key || return 1 ;;
-            0) return 0 ;;
+            b|B) return 0 ;;
+            0)
+                ui_warn '返回请按 b。'
+                ;;
             *)
                 if ! input_key_is_blank "$READ_KEY"; then
                     ui_warn '无效选择。'
@@ -616,7 +659,10 @@ main_loop() {
         case "$READ_KEY" in
             1) application_menu ;;
             2) ssh_menu ;;
-            3) : ;;
+            r|R) : ;;
+            3)
+                ui_warn '刷新状态请按 R。'
+                ;;
             0) return 0 ;;
             *)
                 if ! input_key_is_blank "$READ_KEY"; then
@@ -641,4 +687,4 @@ main_status=$?
 main_cleanup
 exit "$main_status"
 
-# Last updated: 2026-09-12 07:16
+# Last updated: 2026-09-12 08:53
