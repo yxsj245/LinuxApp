@@ -19,6 +19,9 @@ APP_UNIT='linuxapp-deepseek-harness.service'
 APP_MIN_NODE_MAJOR=20
 APP_WRAPPER_MARK='linuxapp-dsh-wrapper'
 DSH_PACKAGE='@deepseek-ai/dsh'
+# 监听地址固定为本机回环地址：上游 dsh web 绑定其它地址（含内网地址与 0.0.0.0）会直接启动失败，
+# 因此这里不做用户选择，也不接受环境变量覆盖；集中在此处定义，便于上游支持后统一调整。
+DSH_FIXED_HOST='127.0.0.1'
 
 # 载入共享库：优先使用框架导出的仓库根目录，其次按脚本相对位置定位。
 dsh_module_dir=$(CDPATH='' cd "$(dirname "$0")" 2>/dev/null && pwd) || dsh_module_dir='.'
@@ -203,10 +206,10 @@ dsh_state_set() {
     return 0
 }
 
+# 监听地址恒为本机回环地址：上游 dsh web 只支持 127.0.0.1，绑定其它地址会启动失败。
+# 这里保持只读、不输出提示，因为 status 的输出会被框架按「状态|版本|说明」解析。
 dsh_cfg_host() {
-    dsh_ch_value=$(dsh_state_get host 2>/dev/null || true)
-    [ -n "$dsh_ch_value" ] || dsh_ch_value=${LINUXAPP_DSH_HOST:-127.0.0.1}
-    printf '%s\n' "$dsh_ch_value"
+    printf '%s\n' "$DSH_FIXED_HOST"
 }
 
 dsh_cfg_port() {
@@ -215,10 +218,25 @@ dsh_cfg_port() {
     printf '%s\n' "$dsh_cp_value"
 }
 
-dsh_cfg_trusted() {
-    dsh_ct_value=$(dsh_state_get trusted_host 2>/dev/null || true)
-    [ -n "$dsh_ct_value" ] || dsh_ct_value=${LINUXAPP_DSH_TRUSTED_HOST:-}
-    printf '%s\n' "$dsh_ct_value"
+# 收敛历史遗留的监听配置：老版本允许选择内网地址并配置可信主机，
+# 现在只支持回环地址，这里在真正要写服务文件时提示一次并清理状态，避免重复告警。
+dsh_host_normalize() {
+    dsh_hn_env=${LINUXAPP_DSH_HOST:-}
+    if [ -n "$dsh_hn_env" ] && [ "$dsh_hn_env" != "$DSH_FIXED_HOST" ]; then
+        lang_warn "已忽略 LINUXAPP_DSH_HOST=$dsh_hn_env：$APP_TITLE 只能监听 $DSH_FIXED_HOST（绑定其它地址会导致启动失败）。"
+    fi
+    dsh_hn_state=$(dsh_state_get host 2>/dev/null || true)
+    if [ -n "$dsh_hn_state" ] && [ "$dsh_hn_state" != "$DSH_FIXED_HOST" ]; then
+        lang_warn "原监听地址 $dsh_hn_state 已停用：$APP_TITLE 只能监听 $DSH_FIXED_HOST，本次按 $DSH_FIXED_HOST 重建服务文件。"
+        dsh_state_set host "$DSH_FIXED_HOST" || true
+    fi
+    dsh_hn_trusted_env=${LINUXAPP_DSH_TRUSTED_HOST:-}
+    dsh_hn_trusted_state=$(dsh_state_get trusted_host 2>/dev/null || true)
+    if [ -n "$dsh_hn_trusted_env" ] || [ -n "$dsh_hn_trusted_state" ]; then
+        lang_warn '仅本机访问不再需要可信主机白名单，已清除 trusted-host 配置。'
+        dsh_state_set trusted_host '' || true
+    fi
+    return 0
 }
 
 dsh_cfg_home() {
@@ -367,46 +385,12 @@ dsh_port_in_use() {
     return 1
 }
 
-# 选择监听地址与端口。结果写入 DSH_LISTEN_HOST / DSH_LISTEN_PORT / DSH_TRUSTED_HOST。
+# 选择监听端口。监听地址固定为 $DSH_FIXED_HOST（上游只支持回环地址），不做选择。
+# 结果写入 DSH_LISTEN_HOST / DSH_LISTEN_PORT。
 dsh_choose_listen() {
-    dsh_cl_host=${LINUXAPP_DSH_HOST:-}
+    dsh_cl_host=$DSH_FIXED_HOST
     dsh_cl_port=${LINUXAPP_DSH_PORT:-}
-    if [ -z "$dsh_cl_host" ]; then
-        dsh_cl_host=127.0.0.1
-        dsh_cl_lan=0
-        if dsh_auto_yes; then
-            # 自动确认不等于同意暴露服务：内网访问必须由用户显式开启。
-            lang_out '已按自动确认模式使用默认监听地址 127.0.0.1（自动确认不会开启内网访问）。'
-        elif lang_has_tty; then
-            lang_out '默认只允许本机访问（127.0.0.1）。'
-            if lang_confirm '是否允许内网访问？（会绑定内网地址，内网设备可直接访问该界面并执行代码，请确认风险）' n; then
-                dsh_cl_lan=1
-            fi
-        fi
-        if [ "$dsh_cl_lan" -eq 1 ]; then
-            dsh_cl_ips=$(ip -4 addr show 2>/dev/null | sed -n 's/.*inet \([0-9][0-9.]*\)\/.*/\1/p' | grep -v '^127\.' | sort -u)
-            dsh_cl_count=$(printf '%s\n' "$dsh_cl_ips" | grep -c .)
-            if [ "$dsh_cl_count" -eq 0 ]; then
-                lang_warn '未检测到内网 IPv4 地址，继续使用 127.0.0.1。'
-            elif [ "$dsh_cl_count" -eq 1 ]; then
-                dsh_cl_host=$dsh_cl_ips
-                lang_out "已选择内网地址：$dsh_cl_host"
-            else
-                lang_out '可绑定的内网地址：'
-                dsh_cl_index=0
-                for dsh_cl_ip in $dsh_cl_ips; do
-                    dsh_cl_index=$((dsh_cl_index + 1))
-                    lang_out "  $dsh_cl_index. $dsh_cl_ip"
-                done
-                if ! lang_choose_number '请输入编号' "$dsh_cl_index"; then
-                    lang_warn '未选择内网地址，继续使用 127.0.0.1。'
-                    dsh_cl_host=127.0.0.1
-                else
-                    dsh_cl_host=$(printf '%s\n' "$dsh_cl_ips" | sed -n "${LANG_CHOICE}p")
-                fi
-            fi
-        fi
-    fi
+    lang_out "监听地址固定为 $dsh_cl_host（$APP_TITLE 绑定其它地址会启动失败，仅本机可访问）。"
 
     if [ -z "$dsh_cl_port" ]; then
         dsh_cl_port=3080
@@ -444,14 +428,6 @@ dsh_choose_listen() {
 
     DSH_LISTEN_HOST=$dsh_cl_host
     DSH_LISTEN_PORT=$dsh_cl_port
-    if [ -n "${LINUXAPP_DSH_TRUSTED_HOST:-}" ]; then
-        DSH_TRUSTED_HOST=$LINUXAPP_DSH_TRUSTED_HOST
-    else
-        case "$dsh_cl_host" in
-            127.0.0.1|localhost|::1) DSH_TRUSTED_HOST='' ;;
-            *) DSH_TRUSTED_HOST="$dsh_cl_host:$dsh_cl_port" ;;
-        esac
-    fi
     return 0
 }
 
@@ -475,12 +451,9 @@ dsh_write_unit() {
     dsh_wu_node_bin=$(dsh_cfg_node_bin)
     dsh_wu_host=$(dsh_cfg_host)
     dsh_wu_port=$(dsh_cfg_port)
-    dsh_wu_trusted=$(dsh_cfg_trusted)
+    dsh_host_normalize
 
     dsh_wu_exec="\"$dsh_wu_node\" \"$dsh_wu_binjs\" web --host \"$dsh_wu_host\" --port \"$dsh_wu_port\" --no-open"
-    if [ -n "$dsh_wu_trusted" ]; then
-        dsh_wu_exec="$dsh_wu_exec --trusted-host \"$dsh_wu_trusted\""
-    fi
 
     mkdir -p "$(dsh_unit_dir)" 2>/dev/null || {
         lang_fail "无法创建服务目录：$(dsh_unit_dir)"
@@ -991,7 +964,7 @@ dsh_install() {
     dsh_install_version "$DSH_TARGET_VERSION" || return 1
     dsh_state_set host "$DSH_LISTEN_HOST" || return 1
     dsh_state_set port "$DSH_LISTEN_PORT" || return 1
-    dsh_state_set trusted_host "${DSH_TRUSTED_HOST:-}" || true
+    dsh_state_set trusted_host '' || true
     dsh_state_set dsh_home "$(dsh_cfg_home)" || true
     dsh_state_set workspace "$(dsh_cfg_workspace)" || true
     dsh_state_set node_bin "$(dsh_node_bin)" || true

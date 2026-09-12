@@ -38,9 +38,10 @@ systemd 系统服务，交给 LinuxApp 统一管理：安装、启动、停止�
 
 1. **安装源**：国内 npm 镜像（`registry.npmmirror.com`，默认）或官方源（`registry.npmjs.org`）。
 2. **要安装的版本**：`1. 最新版本`（npm 标签 `latest`）或 `2. 手动输入版本号或标签`（例如 `0.1.5-rc.1`、`next`）。
-3. **监听地址**：默认 `127.0.0.1`；如需内网访问，会列出本机内网 IPv4 地址让你选择（见第十一节安全说明）。
-4. **监听端口**：默认 `3080`，若被占用会提示你换一个端口。
-5. **确认**：显示版本、监听地址、服务文件路径、`DSH_HOME` 与工作目录后确认。
+3. **监听端口**：默认 `3080`，若被占用会提示你换一个端口。
+4. **确认**：显示版本、监听地址、服务文件路径、`DSH_HOME` 与工作目录后确认。
+
+> **监听地址固定为 `127.0.0.1`，不问也不允许改**：上游 `dsh web` 只支持绑定本机回环地址，指定内网地址或 `0.0.0.0` 都会直接启动失败，因此模块把它写死在 `DSH_FIXED_HOST` 里（见第十一节）。
 
 安装完成后：
 
@@ -238,8 +239,8 @@ LINUXAPP_DSH_HIDE_TOKEN=1 sh modules/software/deepseek-harness/module.sh status
 LINUXAPP_DSH_NPM_SOURCE=mirror LINUXAPP_DSH_YES=1 \
   sh modules/software/deepseek-harness/module.sh install
 
-# 安装指定版本，并绑定内网地址
-LINUXAPP_DSH_VERSION=0.1.5-rc.1 LINUXAPP_DSH_HOST=192.168.11.221 LINUXAPP_DSH_PORT=3080 \
+# 安装指定版本，并指定端口
+LINUXAPP_DSH_VERSION=0.1.5-rc.1 LINUXAPP_DSH_PORT=3080 \
   LINUXAPP_DSH_YES=1 sh modules/software/deepseek-harness/module.sh install
 
 # 更新到最新版本（失败不会自动回滚）
@@ -262,9 +263,9 @@ LINUXAPP_DSH_YES=1 LINUXAPP_DSH_PURGE=1 sh modules/software/deepseek-harness/mod
 | `LINUXAPP_DSH_VERSION` | 空（=最新） | 安装/更新的目标版本号或标签（`latest`、`next`、`0.1.5-rc.1`） |
 | `LINUXAPP_DSH_NPM_SOURCE` | 交互询问 | `mirror` 或 `official`；非交互环境建议显式指定 |
 | `LINUXAPP_DSH_NPM_REGISTRY` | 空 | 自定义 npm registry（设置后覆盖上面两项） |
-| `LINUXAPP_DSH_HOST` | `127.0.0.1` | 监听地址 |
 | `LINUXAPP_DSH_PORT` | `3080` | 监听端口 |
-| `LINUXAPP_DSH_TRUSTED_HOST` | 空 | 额外可信主机（LAN 场景通常为 `<IP>:<端口>`） |
+| `LINUXAPP_DSH_HOST` | —— | **已废弃**：监听地址固定为 `127.0.0.1`，设置其它值会被忽略并提示（见第十一节） |
+| `LINUXAPP_DSH_TRUSTED_HOST` | —— | **已废弃**：仅本机访问不需要可信主机白名单，设置后会被清除并提示 |
 | `LINUXAPP_DSH_HOME` | `~/.dsh` | DSH 数据目录 |
 | `LINUXAPP_DSH_WORKSPACE` | `~/` | 服务的 `WorkingDirectory`，也是会话默认工作区 |
 | `LINUXAPP_DSH_NODE_BIN` | 语言模块的 `nodejs/current/bin` | Node.js 运行时目录 |
@@ -284,9 +285,9 @@ LINUXAPP_DSH_YES=1 LINUXAPP_DSH_PURGE=1 sh modules/software/deepseek-harness/mod
 
 ## 十一、安全说明
 
-- 默认只监听 `127.0.0.1`。选择内网访问会绑定内网地址，**内网设备可以直接访问该界面，而该界面可以执行代码**，请只在受控网络中使用。
+- 监听地址**固定为 `127.0.0.1`**，不提供选择：上游 `dsh web` 绑定非回环地址（内网 IP 或 `0.0.0.0`）都会启动失败，所以模块只允许本机访问，不给出「开放内网」的开关。
 - 访问地址里带有**进程 token**，默认在状态里明文显示（否则无法直接打开界面）：这意味着不要把菜单输出重定向到共享日志或公开位置。需要隐藏时用 `./main.sh --hide-secrets` 或 `LINUXAPP_DSH_HIDE_TOKEN=1`；token 每次启动都会变化，泄露影响面仅限该次进程。
-- 上游明确拒绝 `--host 0.0.0.0`，本模块不会绑定所有网卡。
+- 需要从别的机器访问时，请用 SSH 端口转发（例如 `ssh -L 3080:127.0.0.1:3080 <主机>`）后再打开 `http://127.0.0.1:3080/?token=...`，不要试图改监听地址（改了一定起不来）。
 - 服务以 root 运行；如果你希望降权运行，请在服务文件里自行调整 `User=`（模块当前按需求只支持系统级 root 服务）。
 
 ## 十二、常见问题
@@ -317,14 +318,19 @@ LINUXAPP_DSH_YES=1 LINUXAPP_DSH_PURGE=1 sh modules/software/deepseek-harness/mod
 ```
 
 **8. 服务文件被别的东西覆盖了**
-选择「修复服务文件」：按状态里记录的版本、监听地址与 Node.js 目录重建单元，并重新设置开机自启。
+选择「修复服务文件」：按状态里记录的版本、端口与 Node.js 目录重建单元（监听地址固定写 `127.0.0.1`），并重新设置开机自启。
 
-**9. 状态里的访问地址打不开，或者 token 不对了？**
+**9. 为什么不能改监听地址？**
+上游 `dsh web` 只接受本机回环地址，指定内网 IP 或 `0.0.0.0` 都会直接启动失败，所以模块把地址固定为 `127.0.0.1`：
+安装时不再询问地址，`LINUXAPP_DSH_HOST` 也不再生效（设置后会在写服务文件时提示并忽略），老的 `trusted_host` 配置会被自动清除。
+老版本留下过内网地址的机器，执行一次「更新」「回滚」或「修复服务文件」即可把服务文件改回 `127.0.0.1`（会打印中文提示）。需要远程访问请用 SSH 端口转发。
+
+**10. 状态里的访问地址打不开，或者 token 不对了？**
 token 是**进程级**的：服务如果在模块之外被重启过（例如手工 `systemctl restart`），状态里可能还是上一次的 token。
 选择「查看访问地址」重新读取日志里最新的一条并刷新状态即可；临时不想看到 token 就用 `./main.sh --hide-secrets`。
 
-**10. 菜单里怎么看不到 token？**
+**11. 菜单里怎么看不到 token？**
 先确认没有加 `--hide-secrets`、也没有设置 `LINUXAPP_DSH_HIDE_TOKEN=1`；隐藏时状态里只显示不含 token 的基准地址。
 另外「安装/启动/更新成功」时的提示和「查看访问地址」都是显式输出，即使隐藏 token 也会完整打印地址。
 
-# Last updated: 2026-09-12 07:00
+# Last updated: 2026-09-12 17:52
