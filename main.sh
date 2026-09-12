@@ -8,6 +8,16 @@
 LINUXAPP_BOOTSTRAP_BASE_URL=${LINUXAPP_BASE_URL:-https://linuxapp.xiaozhuhouses.asia/}
 LINUXAPP_ROOT=''
 
+# 自举阶段可用的缓存目录（与 lib/cache.sh 的 cache_root 保持一致）。
+# 此时框架库还没加载，因此这里单独实现一份最小版本，只用于写自举时间标记。
+linuxapp_bootstrap_cache_root() {
+    if [ -n "${XDG_CACHE_HOME:-}" ]; then
+        printf '%s/linuxapp\n' "$XDG_CACHE_HOME"
+    else
+        printf '%s/.cache/linuxapp\n' "${HOME:-.}"
+    fi
+}
+
 # 目录内是否具备最小可运行框架文件。
 linuxapp_root_usable() {
     [ -n "$1" ] && [ -f "$1/config/source.sh" ] && [ -f "$1/config/modules.list" ] && [ -f "$1/lib/ui.sh" ]
@@ -110,6 +120,12 @@ linuxapp_bootstrap() {
     # 固定加载源：框架与模块脚本必须来自同一次部署，避免混用不同站点的版本。
     LINUXAPP_BASE_URL=$lb_base
     export LINUXAPP_ROOT LINUXAPP_BASE_URL
+    # 记录本次部署时间到模块缓存目录：lib/loader.sh 用它判断缓存里的模块脚本是否早于本次
+    # 部署，早于则重新拉取，避免修好的模块脚本被上一轮缓存遮挡（缓存 TTL 内尤其明显）。
+    # 写不进去（例如缓存目录不可写）时静默跳过，不影响自举与菜单启动。
+    lb_cache_root=$(linuxapp_bootstrap_cache_root)
+    mkdir -p "$lb_cache_root/state" 2>/dev/null || true
+    date +%s > "$lb_cache_root/state/bootstrap.stamp" 2>/dev/null || true
     printf '%s\n' '框架文件已就绪，正在进入 LinuxApp 菜单 ...'
     exec sh "$lb_home/main.sh" "$@"
 }
