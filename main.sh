@@ -226,6 +226,34 @@ EOF
     return "$action_status"
 }
 
+# 语言模块的动作列表：基础动作加上模块自报的可选能力（切换版本、更新）。
+module_language_actions() {
+    module_cap_path=$1
+    case "$module_cap_path" in
+        /*) ;;
+        *)
+            if [ -f "$LINUXAPP_ROOT/$module_cap_path" ]; then
+                module_cap_path="$LINUXAPP_ROOT/$module_cap_path"
+            else
+                module_cap_path=$(cache_script_path "$module_cap_path")
+            fi
+            ;;
+    esac
+    MODULE_CAPABILITIES=$(lifecycle_capabilities "$module_cap_path" 2>/dev/null || true)
+    MODULE_ACTION_MAP='install:安装'
+    case " $MODULE_CAPABILITIES " in
+        *' switch '*) MODULE_ACTION_MAP="$MODULE_ACTION_MAP switch:切换版本" ;;
+    esac
+    case " $MODULE_CAPABILITIES " in
+        *' update '*) MODULE_ACTION_MAP="$MODULE_ACTION_MAP update:更新" ;;
+    esac
+    case " $MODULE_CAPABILITIES " in
+        *' repair '*) MODULE_ACTION_MAP="$MODULE_ACTION_MAP repair:修复环境" ;;
+    esac
+    MODULE_ACTION_MAP="$MODULE_ACTION_MAP uninstall:卸载 status:查看状态"
+    return 0
+}
+
 module_actions_menu() {
     action_type=$1
     action_label=$2
@@ -247,32 +275,57 @@ module_actions_menu() {
             ui_menu_item '6.' '查看状态'
             ui_menu_item '0.' '返回'
         else
-            ui_menu_item '1.' '安装'
-            ui_menu_item '2.' '卸载'
-            ui_menu_item '3.' '查看状态'
+            module_language_actions "$action_path"
+            module_action_index=0
+            for module_action_pair in $MODULE_ACTION_MAP; do
+                module_action_index=$((module_action_index + 1))
+                ui_menu_item "$module_action_index." "${module_action_pair#*:}"
+            done
             ui_menu_item '0.' '返回'
         fi
         read_key || return 1
-        case "$READ_KEY" in
-            0) return 0 ;;
-            1) action_name=install ;;
-            2)
-                if [ "$action_type" = software ]; then action_name=start; else action_name=uninstall; fi
-                ;;
-            3)
-                if [ "$action_type" = software ]; then action_name=stop; else action_name=status; fi
-                ;;
-            4)
-                if [ "$action_type" = software ]; then action_name=update; else continue; fi
-                ;;
-            5)
-                if [ "$action_type" = software ]; then action_name=uninstall; else continue; fi
-                ;;
-            6)
-                if [ "$action_type" = software ]; then action_name=status; else continue; fi
-                ;;
-            *) ui_warn '无效选择。'; continue ;;
-        esac
+        action_name=''
+        if [ "$action_type" = software ]; then
+            case "$READ_KEY" in
+                0) return 0 ;;
+                1) action_name=install ;;
+                2) action_name=start ;;
+                3) action_name=stop ;;
+                4) action_name=update ;;
+                5) action_name=uninstall ;;
+                6) action_name=status ;;
+                *)
+                    if input_key_is_blank "$READ_KEY"; then
+                        continue
+                    fi
+                    ui_warn '无效选择。'
+                    continue
+                    ;;
+            esac
+        else
+            case "$READ_KEY" in
+                0) return 0 ;;
+                *[!0-9]*)
+                    if input_key_is_blank "$READ_KEY"; then
+                        continue
+                    fi
+                    ui_warn '无效选择。'
+                    continue
+                    ;;
+            esac
+            module_action_index=0
+            for module_action_pair in $MODULE_ACTION_MAP; do
+                module_action_index=$((module_action_index + 1))
+                if [ "$module_action_index" = "$READ_KEY" ]; then
+                    action_name=${module_action_pair%%:*}
+                    break
+                fi
+            done
+            if [ -z "$action_name" ]; then
+                ui_warn '无效选择。'
+                continue
+            fi
+        fi
         if [ "$action_name" = status ]; then
             module_status_values "$action_type" "$action_path" || true
             status_color=$(ui_status_color "$MODULE_STATE")
@@ -347,7 +400,11 @@ application_menu() {
             1) module_list_menu software '软件模块' ;;
             2) module_list_menu language '语言模块' ;;
             0) return 0 ;;
-            *) ui_warn '无效选择。' ;;
+            *)
+                if ! input_key_is_blank "$READ_KEY"; then
+                    ui_warn '无效选择。'
+                fi
+                ;;
         esac
     done
 }
@@ -365,7 +422,11 @@ ssh_menu() {
             1) ssh_hook_install; ui_wait_key || return 1 ;;
             2) ssh_hook_remove; ui_wait_key || return 1 ;;
             0) return 0 ;;
-            *) ui_warn '无效选择。' ;;
+            *)
+                if ! input_key_is_blank "$READ_KEY"; then
+                    ui_warn '无效选择。'
+                fi
+                ;;
         esac
     done
 }
@@ -382,7 +443,11 @@ main_loop() {
             2) ssh_menu ;;
             3) : ;;
             0) return 0 ;;
-            *) ui_warn '无效选择。' ;;
+            *)
+                if ! input_key_is_blank "$READ_KEY"; then
+                    ui_warn '无效选择。'
+                fi
+                ;;
         esac
     done
 }
@@ -401,4 +466,4 @@ main_status=$?
 main_cleanup
 exit "$main_status"
 
-# Last updated: 2026-09-11 19:00
+# Last updated: 2026-09-12 04:55

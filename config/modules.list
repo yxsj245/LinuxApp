@@ -1,3 +1,7 @@
 # 类型|模块 ID|相对脚本路径|显示名称
+language|java|modules/language/java/module.sh|Java 开发环境
+language|nodejs|modules/language/nodejs/module.sh|Node.js 运行时
+language|go|modules/language/go/module.sh|Go 语言环境
+language|rust|modules/language/rust/module.sh|Rust 工具链
 
-# Last updated: 2026-09-11 19:00
+# Last updated: 2026-09-12 04:30
