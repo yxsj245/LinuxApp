@@ -262,8 +262,8 @@
     <script>
         // 一键使用命令清单：{base} 会替换为当前静态站点地址。
         const apps = [
-            { name: '一键使用', kicker: '01 / MAIN ENTRY', description: '从当前静态站点获取最新入口，直接打开 LinuxApp 交互式应用管理菜单。', command: 'sh -c "$(curl -fsSL {base}main.sh)"' },
-            { name: '指定加载源', kicker: '02 / MIRROR', description: '把模块脚本的加载地址固定为当前站点，部署在自建域名或镜像站点时使用。', command: 'LINUXAPP_BASE_URL={base} sh -c "$(curl -fsSL {base}main.sh)"' }
+            { name: '一键使用', kicker: '01 / MAIN ENTRY', description: '从当前静态站点获取最新入口，自动把框架文件取回本地后打开 LinuxApp 交互式应用管理菜单。', command: 'LINUXAPP_BASE_URL={base} sh -c "$(curl -fsSL {base}main.sh)"' },
+            { name: '自定义存放目录', kicker: '02 / HOME DIR', description: '把框架文件固定下载到指定目录，便于统一管理（默认 ~/.local/share/linuxapp）。', command: 'LINUXAPP_HOME=/opt/linuxapp LINUXAPP_BASE_URL={base} sh -c "$(curl -fsSL {base}main.sh)"' }
         ];
 
         // 已有应用清单：与 config/modules.list 同步，新增模块后在此补充。

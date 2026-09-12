@@ -19,6 +19,13 @@ chmod +x main.sh
 ./main.sh
 ```
 
+不下载仓库也可以直接一键运行（网页“一键使用”生成的命令）。入口检测到没有本地仓库时，会按 `config/bootstrap.list` 把框架文件取回用户目录（默认 `~/.local/share/linuxapp`，可用 `LINUXAPP_HOME` 指定），模块脚本仍在菜单中按需在线加载：
+
+```sh
+LINUXAPP_BASE_URL=https://linuxapp.xiaozhuhouses.asia/ \
+  sh -c "$(curl -fsSL https://linuxapp.xiaozhuhouses.asia/main.sh)"
+```
+
 离线模式：
 
 ```sh
@@ -38,7 +45,7 @@ SSH 登录钩子：
 LinuxApp/
 ├── index.html                       # 静态项目主页、应用目录与一键命令
 ├── main.sh                          # 运行入口
-├── config/                          # 下载地址与模块清单
+├── config/                          # 下载地址、模块清单与一键运行的自举清单
 ├── lib/                             # POSIX sh 公共库
 ├── modules/                         # 已登记的实际模块
 ├── docs/                            # 使用文档与模块开发示例

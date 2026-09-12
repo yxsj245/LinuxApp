@@ -1,0 +1,6 @@
+# 统一使用 LF 行尾：脚本要在 Linux 上以 POSIX sh 运行，CRLF 会导致
+# `sh: 1: ./main.sh: not found` 之类的报错（Windows 检出时尤其容易踩到）。
+*.sh text eol=lf
+*.list text eol=lf
+*.md text eol=lf
+*.html text eol=lf

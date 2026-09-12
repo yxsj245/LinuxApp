@@ -1,0 +1,17 @@
+# LinuxApp 框架文件清单：一键命令（sh -c "$(curl .../main.sh)"）自举时按本文件逐行下载。
+# 每行一个相对仓库根目录的路径，空行与 # 开头的注释行会被忽略。
+# 只有框架文件在这里登记；模块脚本由 lib/loader.sh 在菜单中按需在线加载。
+# 新增框架脚本时请同步更新本文件，否则一键运行会缺少该文件。
+main.sh
+config/source.sh
+config/modules.list
+lib/ui.sh
+lib/input.sh
+lib/cache.sh
+lib/system.sh
+lib/privilege.sh
+lib/lifecycle.sh
+lib/dependency.sh
+lib/ssh_hook.sh
+lib/loader.sh
+lib/lang.sh

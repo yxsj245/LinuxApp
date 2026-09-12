@@ -1,10 +1,122 @@
 #!/bin/sh
 
-# 解析入口路径，确保从任意工作目录调用都能找到项目文件。
-LINUXAPP_ROOT=$(CDPATH=; cd "$(dirname "$0")" 2>/dev/null && pwd) || {
-    printf '%s\n' '错误：无法确定 LinuxApp 项目目录。' >&2
-    exit 1
+# 入口定位：本地仓库运行时按脚本所在目录解析；一键命令
+# （例如 `sh -c "$(curl -fsSL https://.../main.sh)"`）执行时 $0 不是文件路径，
+# 解析不到仓库，此时把框架文件取回用户目录，再以该目录为根目录重新执行本脚本。
+# 站点地址优先取环境变量：自举阶段还没有 config/source.sh，只能先用下面的内置默认值，
+# 自举完成后由 config/source.sh 接管（两处默认值保持一致，可继续用 LINUXAPP_BASE_URL 覆盖）。
+LINUXAPP_BOOTSTRAP_BASE_URL=${LINUXAPP_BASE_URL:-https://linuxapp.xiaozhuhouses.asia/}
+LINUXAPP_ROOT=''
+
+# 目录内是否具备最小可运行框架文件。
+linuxapp_root_usable() {
+    [ -n "$1" ] && [ -f "$1/config/source.sh" ] && [ -f "$1/config/modules.list" ] && [ -f "$1/lib/ui.sh" ]
 }
+
+# 先看脚本自身目录，再看当前工作目录；两者都不成立时返回 1，交给在线自举处理。
+linuxapp_locate_root() {
+    llr_self=$0
+    llr_dir=''
+    case "$llr_self" in
+        */*)
+            llr_dir=$(CDPATH=; cd "$(dirname "$llr_self")" 2>/dev/null && pwd) || llr_dir=''
+            ;;
+    esac
+    if linuxapp_root_usable "$llr_dir"; then
+        LINUXAPP_ROOT=$llr_dir
+        return 0
+    fi
+    llr_cwd=$(pwd 2>/dev/null) || llr_cwd=''
+    if linuxapp_root_usable "$llr_cwd"; then
+        LINUXAPP_ROOT=$llr_cwd
+        return 0
+    fi
+    return 1
+}
+
+# 下载单个文件：先写临时文件，校验成功后再原子替换目标文件。
+linuxapp_bootstrap_fetch() {
+    lbf_url=$1
+    lbf_target=$2
+    lbf_tmp="$lbf_target.tmp.$$"
+    mkdir -p "$(dirname "$lbf_target")" 2>/dev/null || {
+        printf '错误：无法创建目录：%s\n' "$(dirname "$lbf_target")" >&2
+        return 1
+    }
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --connect-timeout "${LINUXAPP_CONNECT_TIMEOUT:-10}" "$lbf_url" -o "$lbf_tmp" 2>/dev/null
+        lbf_status=$?
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q --timeout="${LINUXAPP_CONNECT_TIMEOUT:-10}" -O "$lbf_tmp" "$lbf_url" 2>/dev/null
+        lbf_status=$?
+    else
+        printf '%s\n' '错误：系统中找不到 curl 或 wget，无法获取 LinuxApp 框架文件。' >&2
+        printf '%s\n' '请在 LinuxApp 仓库目录内直接运行 ./main.sh。' >&2
+        return 1
+    fi
+    if [ "$lbf_status" -eq 0 ] && [ -s "$lbf_tmp" ]; then
+        mv "$lbf_tmp" "$lbf_target" && return 0
+    fi
+    rm -f "$lbf_tmp"
+    return 1
+}
+
+# 在线自举：按 config/bootstrap.list 逐行取回框架文件，随后进入菜单。
+# 目录默认放在用户数据目录，可用 LINUXAPP_HOME 覆盖；只有框架文件会落地，
+# 模块脚本仍由 lib/loader.sh 在菜单中按需在线加载。
+linuxapp_bootstrap() {
+    lb_base=${LINUXAPP_BASE_URL:-$LINUXAPP_BOOTSTRAP_BASE_URL}
+    lb_base=${lb_base%/}
+    if [ -n "${LINUXAPP_HOME:-}" ]; then
+        lb_home=$LINUXAPP_HOME
+    elif [ -n "${XDG_DATA_HOME:-}" ]; then
+        lb_home="$XDG_DATA_HOME/linuxapp"
+    else
+        lb_home="${HOME:-.}/.local/share/linuxapp"
+    fi
+    lb_manifest="$lb_home/config/bootstrap.list"
+
+    printf '首次运行：正在从 %s 获取 LinuxApp 文件到 %s\n' "$lb_base" "$lb_home"
+    if ! linuxapp_bootstrap_fetch "$lb_base/config/bootstrap.list" "$lb_manifest"; then
+        printf '错误：无法下载文件清单 %s/config/bootstrap.list，请检查网络后重试。\n' "$lb_base" >&2
+        printf '%s\n' '提示：也可以先下载整个 LinuxApp 仓库，再在仓库目录内运行 ./main.sh。' >&2
+        return 1
+    fi
+
+    lb_failed=''
+    while IFS= read -r lb_rel || [ -n "$lb_rel" ]; do
+        case "$lb_rel" in
+            ''|'#'*) continue ;;
+        esac
+        # 清单只允许仓库内的相对路径，防止被篡改的清单写到项目目录之外。
+        case "$lb_rel" in
+            /*|*..*)
+                printf '错误：文件清单中存在非法路径：%s\n' "$lb_rel" >&2
+                return 1
+                ;;
+        esac
+        if ! linuxapp_bootstrap_fetch "$lb_base/$lb_rel" "$lb_home/$lb_rel"; then
+            lb_failed=$lb_rel
+            break
+        fi
+    done < "$lb_manifest"
+    if [ -n "$lb_failed" ]; then
+        printf '错误：下载框架文件失败：%s/%s\n' "$lb_base" "$lb_failed" >&2
+        printf '%s\n' '请检查网络连通性，或先下载整个 LinuxApp 仓库后在仓库目录内运行 ./main.sh。' >&2
+        return 1
+    fi
+    chmod +x "$lb_home/main.sh" 2>/dev/null || true
+    LINUXAPP_ROOT=$lb_home
+    # 固定加载源：框架与模块脚本必须来自同一次部署，避免混用不同站点的版本。
+    LINUXAPP_BASE_URL=$lb_base
+    export LINUXAPP_ROOT LINUXAPP_BASE_URL
+    printf '%s\n' '框架文件已就绪，正在进入 LinuxApp 菜单 ...'
+    exec sh "$lb_home/main.sh" "$@"
+}
+
+if ! linuxapp_locate_root; then
+    linuxapp_bootstrap "$@" || exit 1
+fi
 export LINUXAPP_ROOT
 
 LINUXAPP_OFFLINE=0
@@ -529,4 +641,4 @@ main_status=$?
 main_cleanup
 exit "$main_status"
 
-# Last updated: 2026-09-12 07:00
+# Last updated: 2026-09-12 07:16
