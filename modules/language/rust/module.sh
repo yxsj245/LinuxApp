@@ -152,6 +152,15 @@ rust_install() {
         return 1
     }
     rust_in_root=$(lang_default_root)
+    # 「安装」的幂等守卫：Rust 工具链已存在时不再进入安装向导，也不再顺手联网更新。
+    # 软件模块的依赖联动会调用本模块的 install 动作，若每次都触发更新，联动会变慢且在无终端
+    # 场景下会因为缺少交互输入直接失败；需要升级时请显式选择「更新」。
+    # LINUXAPP_LANG_FORCE_INSTALL=1 时跳过本守卫，继续用 rustup-init 重新安装。
+    if [ "${LINUXAPP_LANG_FORCE_INSTALL:-0}" != 1 ] && [ -x "$rust_in_root/cargo/bin/rustup" ]; then
+        lang_info 'Rust 工具链已安装，无需重复安装。'
+        lang_out '如需升级工具链请选择「更新」；确实要重装时，请设置 LINUXAPP_LANG_FORCE_INSTALL=1 后重试。'
+        return 0
+    fi
     mkdir -p "$rust_in_root/rust" "$rust_in_root/cargo" 2>/dev/null || {
         lang_fail "无法创建安装目录：$rust_in_root"
         return 1
@@ -162,12 +171,6 @@ rust_install() {
         lang_fail "无法创建临时目录：$LINUXAPP_LANG_STAGING"
         return 1
     }
-
-    if [ -x "$rust_in_root/cargo/bin/rustup" ]; then
-        lang_info 'Rust 工具链已经安装，改为执行更新。'
-        rust_update
-        return $?
-    fi
 
     lang_source_choose || return 1
     rust_in_source=$LANG_SOURCE

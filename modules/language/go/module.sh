@@ -27,6 +27,19 @@ fi
 
 LINUXAPP_LANG_STAGING=''
 
+# 「安装」的幂等守卫：当前激活版本可用时直接视为已就绪，不再进入源选择、版本列表与确认流程。
+# 软件模块的依赖联动会调用本模块的 install 动作，重复进入安装向导会让用户误以为"装过了又重新装"，
+# 无终端场景下还会因为缺少交互输入直接失败，因此这里必须幂等。
+# 需要真正重装同版本时设置 LINUXAPP_LANG_FORCE_INSTALL=1。
+go_install_ready() {
+    go_ir_current=$(lang_current_version go 2>/dev/null || true)
+    [ -n "$go_ir_current" ] || return 1
+    [ -x "$(lang_home go)/$go_ir_current/bin/go" ] || return 1
+    lang_info "Go $go_ir_current 已安装且可用，无需重复安装。"
+    lang_out '如需升级请选择「更新」；确实要重装同一版本时，请设置 LINUXAPP_LANG_FORCE_INSTALL=1 后重试。'
+    return 0
+}
+
 lang_cleanup() {
     if [ -n "$LINUXAPP_LANG_STAGING" ] && [ -d "$LINUXAPP_LANG_STAGING" ]; then
         rm -rf "$LINUXAPP_LANG_STAGING" 2>/dev/null || true
@@ -301,6 +314,9 @@ go_install() {
     if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
         lang_fail '系统中找不到 curl 或 wget，无法下载 Go。请先安装 curl 或 wget。'
         return 1
+    fi
+    if [ "${LINUXAPP_LANG_FORCE_INSTALL:-0}" != 1 ] && go_install_ready; then
+        return 0
     fi
     lang_source_choose || return 1
     go_in_source=$LANG_SOURCE

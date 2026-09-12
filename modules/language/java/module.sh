@@ -27,6 +27,20 @@ fi
 
 LINUXAPP_LANG_STAGING=''
 
+# 「安装」的幂等守卫：当前激活版本可用时直接视为已就绪，不再联网取列表、也不再进入确认流程。
+# 软件模块的依赖联动会调用本模块的 install 动作，重复进入安装向导会让用户误以为"装过了又重新装"，
+# 无终端场景下还会因为缺少交互输入直接失败，因此这里必须幂等。
+# 需要真正重装同版本时设置 LINUXAPP_LANG_FORCE_INSTALL=1。
+java_install_ready() {
+    java_ir_current=$(lang_current_version java 2>/dev/null || true)
+    [ -n "$java_ir_current" ] || return 1
+    [ -x "$(lang_home java)/$java_ir_current/bin/java" ] || return 1
+    lang_info "JDK $java_ir_current 已安装且可用，无需重复安装。"
+    lang_out '如需升级请选择「更新」，如需切换到其它已安装版本请选择「切换版本」；'
+    lang_out '确实要重装同一版本时，请设置 LINUXAPP_LANG_FORCE_INSTALL=1 后重试。'
+    return 0
+}
+
 lang_cleanup() {
     if [ -n "$LINUXAPP_LANG_STAGING" ] && [ -d "$LINUXAPP_LANG_STAGING" ]; then
         rm -rf "$LINUXAPP_LANG_STAGING" 2>/dev/null || true
@@ -379,6 +393,9 @@ java_install() {
         lang_fail '当前 CPU 架构不受支持，仅支持 x86_64 与 aarch64。'
         return 1
     }
+    if [ "${LINUXAPP_LANG_FORCE_INSTALL:-0}" != 1 ] && java_install_ready; then
+        return 0
+    fi
     java_in_root=$(lang_default_root)
     mkdir -p "$java_in_root/java" 2>/dev/null || {
         lang_fail "无法创建安装目录：$java_in_root/java"
