@@ -134,6 +134,42 @@ dependency_language_module() {
     return 0
 }
 
+# 语言模块脚本的缓存路径：与 lib/cache.sh 的 cache_script_path 保持一致。
+# 一键自举只落地框架文件，模块脚本按需下载到缓存；此处重算一遍是为了让本库不依赖 lib/cache.sh。
+dependency_cache_script() {
+    dep_cs_key=$(printf '%s' "$1" | sed 's#[^A-Za-z0-9._-]#_#g')
+    if [ -n "${XDG_CACHE_HOME:-}" ]; then
+        printf '%s/linuxapp/scripts/%s.sh\n' "$XDG_CACHE_HOME" "$dep_cs_key"
+    else
+        printf '%s/.cache/linuxapp/scripts/%s.sh\n' "${HOME:-.}" "$dep_cs_key"
+    fi
+}
+
+# 定位语言模块脚本：$1 仓库根目录，$2 模块相对路径。成功时把实际路径写入 DEP_SCRIPT_PATH。
+# 模块脚本与框架文件不同，一键自举不会预先下载，因此这里必须复用 lib/loader.sh 的按需加载：
+# 本地仓库内没有该脚本时，由 loader 下载到缓存并返回缓存路径；缺网络时回退到缓存旧副本。
+# 框架菜单已加载 lib/loader.sh；模块脚本单独调用本库时若没有 loader，则退回缓存路径。
+dependency_language_script() {
+    dep_dls_root=$1
+    dep_dls_rel=$2
+    DEP_SCRIPT_PATH="$dep_dls_root/$dep_dls_rel"
+    if [ -f "$DEP_SCRIPT_PATH" ]; then
+        return 0
+    fi
+    if command -v loader_ensure_script >/dev/null 2>&1; then
+        if loader_ensure_script "$dep_dls_rel"; then
+            DEP_SCRIPT_PATH=$LOADED_MODULE_PATH
+            return 0
+        fi
+    fi
+    dep_dls_cache=$(dependency_cache_script "$dep_dls_rel")
+    if [ -f "$dep_dls_cache" ]; then
+        DEP_SCRIPT_PATH=$dep_dls_cache
+        return 0
+    fi
+    return 1
+}
+
 # 查询语言模块状态：$1 语言模块脚本路径。状态写入 DEP_STATE，版本写入 DEP_VERSION。
 dependency_language_state() {
     dep_ls_path=$1
@@ -152,6 +188,7 @@ dependency_language_state() {
 
 # 依赖状态报告（只读，供菜单显示）。$1 软件模块脚本路径。
 # 每行输出「语言显示名：状态（版本）」，没有依赖或无法解析时输出为空。
+# 语言模块脚本尚未下载到本机时会按需加载一次（缓存命中后不再联网），保证显示的是真实状态。
 dependency_report() {
     dep_rp_path=$1
     dep_rp_root=$(dependency_repo_root "$dep_rp_path" 2>/dev/null || true)
@@ -160,7 +197,18 @@ dependency_report() {
     [ -n "$dep_rp_langs" ] || return 0
     for dep_rp_key in $dep_rp_langs; do
         if dependency_language_module "$dep_rp_key" "$dep_rp_root"; then
-            dependency_language_state "$dep_rp_root/$DEP_MODULE_PATH"
+            dep_rp_rel=$DEP_MODULE_PATH
+            dep_rp_script=''
+            if dependency_language_script "$dep_rp_root" "$dep_rp_rel"; then
+                dep_rp_script=$DEP_SCRIPT_PATH
+            fi
+            if [ -f "$dep_rp_script" ]; then
+                dependency_language_state "$dep_rp_script"
+            else
+                # 脚本既不在本地也无法在线获取，此时无法判断状态，按“未安装”提示以便用户主动处理。
+                DEP_STATE='未安装'
+                DEP_VERSION='-'
+            fi
             printf '%s：%s（%s）\n' "$DEP_LABEL" "$DEP_STATE" "$DEP_VERSION"
         else
             printf '%s：清单中未登记该语言模块\n' "$dep_rp_key"
@@ -189,10 +237,28 @@ dependency_ensure() {
             dep_fail "应用「$dep_en_app」依赖语言模块 $dep_en_key，但 config/modules.list 中没有登记该语言模块。"
             return 1
         fi
-        dep_en_script="$dep_en_root/$DEP_MODULE_PATH"
+        dep_en_rel=$DEP_MODULE_PATH
         dep_en_label=$DEP_LABEL
+        # 脚本可能尚未下载到本机：先按需加载取回实际路径，再检查是否真的可用。
+        dep_en_script=''
+        if dependency_language_script "$dep_en_root" "$dep_en_rel"; then
+            dep_en_script=$DEP_SCRIPT_PATH
+        else
+            dep_en_script="$dep_en_root/$dep_en_rel"
+        fi
         if [ ! -f "$dep_en_script" ]; then
-            dep_fail "语言模块脚本不存在：$dep_en_script"
+            case "$dep_en_script" in
+                "$dep_en_root"/*)
+                    if [ "${LINUXAPP_OFFLINE:-0}" -eq 1 ]; then
+                        dep_fail "语言模块脚本不存在：$dep_en_script（离线模式下不会自动下载）"
+                    else
+                        dep_fail "语言模块脚本不存在且无法在线获取：$dep_en_script；请检查网络与 LINUXAPP_BASE_URL 后重试。"
+                    fi
+                    ;;
+                *)
+                    dep_fail "语言模块脚本不存在：$dep_en_script"
+                    ;;
+            esac
             return 1
         fi
         dependency_language_state "$dep_en_script"
@@ -233,4 +299,4 @@ dependency_ensure() {
     return 0
 }
 
-# Last updated: 2026-09-12 06:10
+# Last updated: 2026-09-12 07:30
