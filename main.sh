@@ -124,24 +124,25 @@ find_module_by_index() {
     return 1
 }
 
+# 变量统一使用 msv_ 前缀：POSIX sh 没有局部变量，函数内赋值会覆盖同名全局变量。
 module_status_values() {
-    status_path=$2
+    msv_path=$2
     MODULE_STATE='异常'
     MODULE_VERSION='未知'
     MODULE_INFO='脚本不可用'
     MODULE_SECRET=''
-    if ! loader_ensure_script "$status_path"; then
+    if ! loader_ensure_script "$msv_path"; then
         return 1
     fi
-    status_raw=$(lifecycle_status "$LOADED_MODULE_PATH" 2>&1)
-    status_code=$?
-    if [ "$status_code" -ne 0 ] && [ -z "$status_raw" ]; then
-        return "$status_code"
+    msv_raw=$(lifecycle_status "$LOADED_MODULE_PATH" 2>&1)
+    msv_code=$?
+    if [ "$msv_code" -ne 0 ] && [ -z "$msv_raw" ]; then
+        return "$msv_code"
     fi
-    MODULE_STATE=$(printf '%s\n' "$status_raw" | awk -F '|' 'NR == 1 { print $1 }')
-    MODULE_VERSION=$(printf '%s\n' "$status_raw" | awk -F '|' 'NR == 1 { print $2 }')
-    MODULE_INFO=$(printf '%s\n' "$status_raw" | awk -F '|' 'NR == 1 { print $3 }')
-    MODULE_SECRET=$(printf '%s\n' "$status_raw" | awk -F '|' 'NR == 1 { print $4 }')
+    MODULE_STATE=$(printf '%s\n' "$msv_raw" | awk -F '|' 'NR == 1 { print $1 }')
+    MODULE_VERSION=$(printf '%s\n' "$msv_raw" | awk -F '|' 'NR == 1 { print $2 }')
+    MODULE_INFO=$(printf '%s\n' "$msv_raw" | awk -F '|' 'NR == 1 { print $3 }')
+    MODULE_SECRET=$(printf '%s\n' "$msv_raw" | awk -F '|' 'NR == 1 { print $4 }')
     [ -n "$MODULE_STATE" ] || MODULE_STATE='异常'
     [ -n "$MODULE_VERSION" ] || MODULE_VERSION='未知'
     [ -n "$MODULE_INFO" ] || MODULE_INFO='无状态信息'
@@ -205,25 +206,28 @@ show_dashboard() {
     printf '\n'
 }
 
+# 执行模块动作。参数使用 rma_ 前缀：POSIX sh 没有局部变量，若沿用调用方的
+# 变量名（如 action_path），会把 module_actions_menu 的脚本路径覆盖成缓存脚本
+# 的绝对路径，导致动作结束后刷新界面时按相对路径找不到模块脚本。
 run_module_action() {
-    action_type=$1
-    action_path=$2
-    action_name=$3
+    rma_type=$1
+    rma_path=$2
+    rma_name=$3
     CHILD_RUNNING=1
     CHILD_INTERRUPTED=0
-    action_output=$(lifecycle_action "$action_path" "$action_type" "$action_name" 2>&1)
-    action_status=$?
+    action_output=$(lifecycle_action "$rma_path" "$rma_type" "$rma_name" 2>&1)
+    rma_status=$?
     CHILD_RUNNING=0
     if [ -n "$action_output" ]; then
         ui_text_block <<EOF
 $action_output
 EOF
     fi
-    if [ "$CHILD_INTERRUPTED" -eq 1 ] || [ "$action_status" -eq 130 ]; then
+    if [ "$CHILD_INTERRUPTED" -eq 1 ] || [ "$rma_status" -eq 130 ]; then
         ui_warn '子任务已中断，返回当前模块的上一级菜单。'
         return 130
     fi
-    return "$action_status"
+    return "$rma_status"
 }
 
 # 语言模块的动作列表：基础动作加上模块自报的可选能力（切换版本、更新）。
@@ -466,4 +470,4 @@ main_status=$?
 main_cleanup
 exit "$main_status"
 
-# Last updated: 2026-09-12 04:55
+# Last updated: 2026-09-12 05:35

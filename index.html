@@ -161,7 +161,7 @@
         .catalog-toolbar code { color: var(--acid); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; }
         .catalog-hint { color: var(--muted); font-size: 13px; }
         .app-list { display: grid; grid-template-columns: repeat(2, 1fr); }
-        .empty-apps { padding: 34px 22px; color: var(--muted); font-size: 14px; }
+        .empty-apps { grid-column: 1 / -1; padding: 34px 22px; color: var(--muted); font-size: 14px; }
 
         .app-item { display: flex; flex-direction: column; justify-content: space-between; gap: 25px; min-height: 220px; padding: 22px; border-bottom: 1px solid var(--line); }
         .app-item:nth-child(odd) { border-right: 1px solid var(--line); }
@@ -242,9 +242,12 @@
             </div>
             <div class="section-heading subsection">
                 <h2>已有应用</h2>
-                <p>应用模块将在后续版本逐步加入。</p>
+                <p>已登记的语言环境模块：安装后自动接入环境变量与命令入口，新开终端即可直接使用。卡片中的直调命令需在 LinuxApp 仓库目录内执行。</p>
             </div>
-            <div class="catalog-shell"><div class="empty-apps">当前暂无已发布应用。</div></div>
+            <div class="catalog-shell">
+                <div class="catalog-toolbar"><code id="module-count">modules / loading...</code><span class="catalog-hint">菜单路径：应用管理 → 语言模块</span></div>
+                <div id="module-list" class="app-list"></div>
+            </div>
         </section>
     </main>
 
@@ -255,40 +258,66 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script>
+        // 一键使用命令清单：{base} 会替换为当前静态站点地址。
         const apps = [
-            { name: '一键使用', kicker: '01 / MAIN ENTRY', description: '从当前静态站点获取最新入口，直接打开 LinuxApp 交互式应用管理菜单。', command: 'sh -c "$(curl -fsSL {base}main.sh)"' }
+            { name: '一键使用', kicker: '01 / MAIN ENTRY', description: '从当前静态站点获取最新入口，直接打开 LinuxApp 交互式应用管理菜单。', command: 'sh -c "$(curl -fsSL {base}main.sh)"' },
+            { name: '指定加载源', kicker: '02 / MIRROR', description: '把模块脚本的加载地址固定为当前站点，部署在自建域名或镜像站点时使用。', command: 'LINUXAPP_BASE_URL={base} sh -c "$(curl -fsSL {base}main.sh)"' }
+        ];
+
+        // 已有应用清单：与 config/modules.list 同步，新增模块后在此补充。
+        const modules = [
+            { name: 'Java 开发环境', kicker: 'LANGUAGE / 01', description: 'Temurin JDK：安装、切换版本、更新（补丁或大版本）、修复环境、按版本卸载。', command: 'sh modules/language/java/module.sh status' },
+            { name: 'Node.js 运行时', kicker: 'LANGUAGE / 02', description: '多版本共存：安装、切换版本、更新、修复环境、按版本卸载（输入 a 卸载全部）。', command: 'sh modules/language/nodejs/module.sh status' },
+            { name: 'Go 语言环境', kicker: 'LANGUAGE / 03', description: '安装、更新、修复环境、按版本卸载，安装源可选官方源或国内代理。', command: 'sh modules/language/go/module.sh status' },
+            { name: 'Rust 工具链', kicker: 'LANGUAGE / 04', description: '基于 rustup：安装、更新、修复环境，卸载时按工具链选择。', command: 'sh modules/language/rust/module.sh status' }
         ];
 
         const list = document.querySelector('#app-list');
+        const moduleList = document.querySelector('#module-list');
         const count = document.querySelector('#catalog-count');
+        const moduleCount = document.querySelector('#module-count');
         const toast = document.querySelector('#toast');
         const baseUrl = new URL('./', window.location.href);
 
         const base = baseUrl.href;
-        count.textContent = `apps / ${apps.length} command`;
 
-        apps.forEach((app) => {
-            const command = app.command.split('{base}').join(base);
-            const item = document.createElement('article');
-            item.className = 'app-item';
-            item.innerHTML = `
-                <div>
-                    <div class="app-kicker">${app.kicker}</div>
-                    <h3>${app.name}</h3>
-                    <p>${app.description}</p>
-                </div>
-                <div class="command-box">
-                    <code></code>
-                    <button type="button">复制命令</button>
-                </div>
-            `;
-            const commandCode = item.querySelector('code');
-            const copyButton = item.querySelector('button');
-            commandCode.textContent = command;
-            commandCode.title = command;
-            copyButton.dataset.copy = command;
-            list.appendChild(item);
-        });
+        // 渲染命令清单：命令中的 {base} 占位符替换为当前站点地址。
+        function renderCatalog(container, items) {
+            if (!items.length) {
+                const empty = document.createElement('div');
+                empty.className = 'empty-apps';
+                empty.textContent = '当前暂无已发布应用。';
+                container.appendChild(empty);
+                return;
+            }
+            items.forEach((item) => {
+                const command = item.command.split('{base}').join(base);
+                const node = document.createElement('article');
+                node.className = 'app-item';
+                node.innerHTML = `
+                    <div>
+                        <div class="app-kicker">${item.kicker}</div>
+                        <h3>${item.name}</h3>
+                        <p>${item.description}</p>
+                    </div>
+                    <div class="command-box">
+                        <code></code>
+                        <button type="button">复制命令</button>
+                    </div>
+                `;
+                const commandCode = node.querySelector('code');
+                const copyButton = node.querySelector('button');
+                commandCode.textContent = command;
+                commandCode.title = command;
+                copyButton.dataset.copy = command;
+                container.appendChild(node);
+            });
+        }
+
+        renderCatalog(list, apps);
+        renderCatalog(moduleList, modules);
+        count.textContent = `apps / ${apps.length} command`;
+        moduleCount.textContent = `modules / ${modules.length} app`;
 
         function showToast(message) {
             toast.textContent = message;
@@ -327,12 +356,14 @@
             return copied;
         }
 
-        list.addEventListener('click', async (event) => {
+        // 复制按钮在两个清单中通用：事件委托到文档，避免重复绑定。
+        document.addEventListener('click', async (event) => {
+            if (!(event.target instanceof Element)) return;
             const button = event.target.closest('[data-copy]');
             if (!button) return;
             try {
                 const copied = await copyText(button.dataset.copy);
-                showToast(copied ? '一键运行命令已复制。' : '当前浏览器不允许自动复制，请手动复制命令。');
+                showToast(copied ? '命令已复制。' : '当前浏览器不允许自动复制，请手动复制命令。');
             } catch (error) {
                 showToast('复制失败，请手动复制命令。');
             }

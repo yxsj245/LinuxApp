@@ -50,17 +50,30 @@ loader_download() {
 
 loader_ensure_script() {
     loader_relative=$1
+    LOADED_MODULE_PATH=''
+
+    # 已经是绝对路径（例如缓存脚本自身或调用方传入的仓库内脚本）时直接使用，
+    # 不能再与仓库根目录拼接，否则会得到一个必然不存在的路径。
+    case "$loader_relative" in
+        /*)
+            if [ -f "$loader_relative" ]; then
+                # shellcheck disable=SC2034
+                LOADED_MODULE_PATH=$loader_relative
+                return 0
+            fi
+            ;;
+    esac
+
     loader_local="$LINUXAPP_ROOT/$loader_relative"
     loader_cache=$(cache_script_path "$loader_relative")
     loader_url=$(loader_url_for "$loader_relative")
-    LOADED_MODULE_PATH=''
 
     if [ "${LINUXAPP_OFFLINE:-0}" -eq 1 ]; then
         if [ -f "$loader_local" ]; then
             LOADED_MODULE_PATH=$loader_local
             return 0
         fi
-        ui_error "离线模式缺少脚本：$loader_relative"
+        ui_error "离线模式缺少脚本：$loader_relative（实际检查路径：$loader_local）"
         return 1
     fi
 
@@ -88,7 +101,7 @@ loader_ensure_script() {
                 LOADED_MODULE_PATH=$loader_cache
                 return 0
             fi
-            ui_error "远程脚本下载失败且本地不存在：$loader_relative"
+            ui_error "远程脚本下载失败且本地不存在：$loader_relative（实际检查路径：$loader_local）"
         fi
     elif [ ! -f "$loader_local" ]; then
         ui_warn "未配置远程地址，且本地脚本不存在：$loader_relative"
@@ -127,4 +140,4 @@ loader_validate_offline() {
     return "$missing"
 }
 
-# Last updated: 2026-09-12 04:40
+# Last updated: 2026-09-12 05:35
