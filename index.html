@@ -165,7 +165,9 @@
 
         .app-item { display: flex; flex-direction: column; justify-content: space-between; gap: 25px; min-height: 220px; padding: 22px; border-bottom: 1px solid var(--line); }
         .app-item:nth-child(odd) { border-right: 1px solid var(--line); }
-        .app-item:nth-last-child(-n + 2) { border-bottom: 0; }
+        /* 卡片数量为偶数时，最后两格是同一行；为奇数时只有最后一格，需要单独收掉分隔线。 */
+        .app-list[data-parity="even"] .app-item:nth-last-child(-n + 2) { border-bottom: 0; }
+        .app-list[data-parity="odd"] .app-item:last-child { border-bottom: 0; border-right: 0; }
         .app-kicker { color: var(--orange); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
         .app-item h3 { margin: 11px 0 6px; font-size: 21px; }
         .app-item p { margin: 0; color: var(--muted); font-size: 13px; }
@@ -189,7 +191,7 @@
             .feature-grid, .app-list { grid-template-columns: 1fr; }
             .feature-card:nth-child(2) { transform: none; }
             .app-item:nth-child(odd) { border-right: 0; }
-            .app-item:nth-last-child(-n + 2) { border-bottom: 1px solid var(--line); }
+            .app-list[data-parity="even"] .app-item:nth-last-child(-n + 2) { border-bottom: 1px solid var(--line); }
             .app-item:last-child { border-bottom: 0; }
             .section-heading { display: block; }
             .section-heading p { margin-top: 12px; }
@@ -242,10 +244,10 @@
             </div>
             <div class="section-heading subsection">
                 <h2>已有应用</h2>
-                <p>已登记的语言环境模块：安装后自动接入环境变量与命令入口，新开终端即可直接使用。卡片中的直调命令需在 LinuxApp 仓库目录内执行。</p>
+                <p>已登记的软件模块与语言环境模块：软件模块把应用注册为 systemd 服务并管理版本与回滚，语言模块安装后自动接入环境变量与命令入口。卡片中的直调命令需在 LinuxApp 仓库目录内执行。</p>
             </div>
             <div class="catalog-shell">
-                <div class="catalog-toolbar"><code id="module-count">modules / loading...</code><span class="catalog-hint">菜单路径：应用管理 → 语言模块</span></div>
+                <div class="catalog-toolbar"><code id="module-count">modules / loading...</code><span class="catalog-hint">菜单路径：应用管理 → 软件模块 / 语言模块</span></div>
                 <div id="module-list" class="app-list"></div>
             </div>
         </section>
@@ -266,6 +268,7 @@
 
         // 已有应用清单：与 config/modules.list 同步，新增模块后在此补充。
         const modules = [
+            { name: 'DeepSeek Harness', kicker: 'SOFTWARE / 01', description: '注册为 systemd 服务并开机自启；服务固定使用精确版本，更新先提示插件风险，失败不自动回滚、可直接回滚到上一版本。', command: 'sh modules/software/deepseek-harness/module.sh status' },
             { name: 'Java 开发环境', kicker: 'LANGUAGE / 01', description: 'Temurin JDK：安装、切换版本、更新（补丁或大版本）、修复环境、按版本卸载。', command: 'sh modules/language/java/module.sh status' },
             { name: 'Node.js 运行时', kicker: 'LANGUAGE / 02', description: '多版本共存：安装、切换版本、更新、修复环境、按版本卸载（输入 a 卸载全部）。', command: 'sh modules/language/nodejs/module.sh status' },
             { name: 'Go 语言环境', kicker: 'LANGUAGE / 03', description: '安装、更新、修复环境、按版本卸载，安装源可选官方源或国内代理。', command: 'sh modules/language/go/module.sh status' },
@@ -283,6 +286,8 @@
 
         // 渲染命令清单：命令中的 {base} 占位符替换为当前站点地址。
         function renderCatalog(container, items) {
+            // 卡片数量决定最后一行有几格，供 CSS 收敛分隔线。
+            container.dataset.parity = items.length % 2 === 0 ? 'even' : 'odd';
             if (!items.length) {
                 const empty = document.createElement('div');
                 empty.className = 'empty-apps';

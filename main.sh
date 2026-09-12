@@ -8,12 +8,15 @@ LINUXAPP_ROOT=$(CDPATH=; cd "$(dirname "$0")" 2>/dev/null && pwd) || {
 export LINUXAPP_ROOT
 
 LINUXAPP_OFFLINE=0
-LINUXAPP_SHOW_SECRETS=0
+# 状态行第四列（凭证等敏感字段）默认显示明文：带 token 的访问地址如果被遮住，用户无法直接打开界面。
+# 需要隐藏时用 --hide-secrets；该变量会导出给模块，模块内的同类显示（如 DeepSeek Harness 的访问地址）也遵循它。
+LINUXAPP_SHOW_SECRETS=1
 LINUXAPP_SPECIAL_ACTION=''
 while [ "$#" -gt 0 ]; do
     case "$1" in
         -offline) LINUXAPP_OFFLINE=1 ;;
         --show-secrets) LINUXAPP_SHOW_SECRETS=1 ;;
+        --hide-secrets) LINUXAPP_SHOW_SECRETS=0 ;;
         --install-ssh-hook|--remove-ssh-hook)
             if [ -n "$LINUXAPP_SPECIAL_ACTION" ]; then
                 printf '%s\n' '错误：不能同时指定多个特殊动作。' >&2
@@ -22,7 +25,7 @@ while [ "$#" -gt 0 ]; do
             LINUXAPP_SPECIAL_ACTION=$1
             ;;
         --help|-h)
-            printf '%s\n' '用法：main.sh [-offline] [--show-secrets]'
+            printf '%s\n' '用法：main.sh [-offline] [--show-secrets|--hide-secrets]'
             printf '%s\n' '       main.sh --install-ssh-hook'
             printf '%s\n' '       main.sh --remove-ssh-hook'
             exit 0
@@ -62,6 +65,7 @@ export LINUXAPP_OFFLINE LINUXAPP_SHOW_SECRETS
 . "$LINUXAPP_ROOT/lib/system.sh" || exit 1
 . "$LINUXAPP_ROOT/lib/privilege.sh" || exit 1
 . "$LINUXAPP_ROOT/lib/lifecycle.sh" || exit 1
+. "$LINUXAPP_ROOT/lib/dependency.sh" || exit 1
 . "$LINUXAPP_ROOT/lib/ssh_hook.sh" || exit 1
 . "$LINUXAPP_ROOT/lib/loader.sh" || exit 1
 
@@ -147,7 +151,7 @@ module_status_values() {
     [ -n "$MODULE_VERSION" ] || MODULE_VERSION='未知'
     [ -n "$MODULE_INFO" ] || MODULE_INFO='无状态信息'
     if [ -n "$MODULE_SECRET" ]; then
-        if [ "$LINUXAPP_SHOW_SECRETS" -eq 1 ] && input_is_interactive; then
+        if [ "$LINUXAPP_SHOW_SECRETS" -eq 1 ]; then
             MODULE_INFO="$MODULE_INFO；凭证：$MODULE_SECRET"
         else
             MODULE_INFO="$MODULE_INFO；凭证：******"
@@ -230,19 +234,25 @@ EOF
     return "$rma_status"
 }
 
-# 语言模块的动作列表：基础动作加上模块自报的可选能力（切换版本、更新）。
-module_language_actions() {
-    module_cap_path=$1
-    case "$module_cap_path" in
-        /*) ;;
-        *)
-            if [ -f "$LINUXAPP_ROOT/$module_cap_path" ]; then
-                module_cap_path="$LINUXAPP_ROOT/$module_cap_path"
-            else
-                module_cap_path=$(cache_script_path "$module_cap_path")
-            fi
+# 把模块脚本路径解析为绝对路径：仓库内相对路径优先，其次使用缓存脚本。
+module_resolve_path() {
+    mrp_input=$1
+    case "$mrp_input" in
+        /*)
+            printf '%s\n' "$mrp_input"
+            return 0
             ;;
     esac
+    if [ -f "$LINUXAPP_ROOT/$mrp_input" ]; then
+        printf '%s\n' "$LINUXAPP_ROOT/$mrp_input"
+        return 0
+    fi
+    cache_script_path "$mrp_input"
+}
+
+# 语言模块的动作列表：基础动作加上模块自报的可选能力（切换版本、更新）。
+module_language_actions() {
+    module_cap_path=$(module_resolve_path "$1")
     MODULE_CAPABILITIES=$(lifecycle_capabilities "$module_cap_path" 2>/dev/null || true)
     MODULE_ACTION_MAP='install:安装'
     case " $MODULE_CAPABILITIES " in
@@ -258,6 +268,71 @@ module_language_actions() {
     return 0
 }
 
+# 软件模块的动作列表：六个基础动作加上模块按当前状态自报的附加动作（可选动作 extras）。
+# extras 每行输出「动作键|中文名」，动作键会原样传给模块脚本；与基础动作同名的条目会被忽略，
+# 避免模块自报的动作覆盖框架约定的生命周期动作。
+module_software_actions() {
+    module_sa_path=$(module_resolve_path "$1")
+    MODULE_ACTION_MAP='install:安装 start:启动 stop:停止 update:更新 uninstall:卸载 status:查看状态'
+    module_sa_extras=$(lifecycle_extras "$module_sa_path" 2>/dev/null || true)
+    if [ -n "$module_sa_extras" ]; then
+        module_sa_map=$MODULE_ACTION_MAP
+        while IFS= read -r module_sa_line; do
+            case "$module_sa_line" in
+                ''|'#'*) continue ;;
+            esac
+            module_sa_key=${module_sa_line%%|*}
+            module_sa_label=${module_sa_line#*|}
+            # 没有分隔符或动作键为空的行不是合法声明，直接跳过。
+            [ -n "$module_sa_key" ] || continue
+            [ "$module_sa_label" != "$module_sa_line" ] || continue
+            module_sa_dup=0
+            for module_sa_pair in $module_sa_map; do
+                if [ "${module_sa_pair%%:*}" = "$module_sa_key" ]; then
+                    module_sa_dup=1
+                    break
+                fi
+            done
+            [ "$module_sa_dup" -eq 0 ] || continue
+            module_sa_map="$module_sa_map $module_sa_key:$module_sa_label"
+        done <<EOF
+$module_sa_extras
+EOF
+        MODULE_ACTION_MAP=$module_sa_map
+    fi
+    return 0
+}
+
+# 软件模块的依赖语言状态（只读，供菜单显示）。没有声明依赖时不输出任何内容。
+module_dependency_report() {
+    module_dp_path=$(module_resolve_path "$1")
+    module_dp_lines=$(dependency_report "$module_dp_path" 2>/dev/null || true)
+    [ -n "$module_dp_lines" ] || return 0
+    while IFS= read -r module_dp_line; do
+        [ -n "$module_dp_line" ] || continue
+        printf '%s依赖语言%s | %s%s%s\n' \
+            "$UI_PRIMARY" "$UI_RESET" "$UI_SECONDARY" "$module_dp_line" "$UI_RESET"
+    done <<EOF
+$module_dp_lines
+EOF
+    return 0
+}
+
+# 软件模块动作执行前的语言依赖确保：缺少依赖语言时先调用语言模块安装。
+# 返回 1 时调用方必须中止当前动作（此时尚未产生任何副作用）。
+module_ensure_dependencies() {
+    module_ed_type=$1
+    module_ed_label=$2
+    module_ed_script=$3
+    module_ed_action=$4
+    [ "$module_ed_type" = software ] || return 0
+    case "$module_ed_action" in
+        install|update|start) ;;
+        *) return 0 ;;
+    esac
+    dependency_ensure "$module_ed_label" "$module_ed_script"
+}
+
 module_actions_menu() {
     action_type=$1
     action_label=$2
@@ -268,67 +343,46 @@ module_actions_menu() {
         ui_section "$action_label"
         module_status_values "$action_type" "$action_path" || true
         action_status_color=$(ui_status_color "$MODULE_STATE")
-        printf '%s当前状态%s | %s%s%s | %s%s%s\n\n' \
+        printf '%s当前状态%s | %s%s%s | %s%s%s\n' \
             "$UI_PRIMARY" "$UI_RESET" "$action_status_color" "$MODULE_STATE" "$UI_RESET" "$UI_SECONDARY" "$MODULE_INFO" "$UI_RESET"
         if [ "$action_type" = software ]; then
-            ui_menu_item '1.' '安装'
-            ui_menu_item '2.' '启动'
-            ui_menu_item '3.' '停止'
-            ui_menu_item '4.' '更新'
-            ui_menu_item '5.' '卸载'
-            ui_menu_item '6.' '查看状态'
-            ui_menu_item '0.' '返回'
+            module_dependency_report "$action_path"
+        fi
+        printf '\n'
+        if [ "$action_type" = software ]; then
+            module_software_actions "$action_path"
         else
             module_language_actions "$action_path"
-            module_action_index=0
-            for module_action_pair in $MODULE_ACTION_MAP; do
-                module_action_index=$((module_action_index + 1))
-                ui_menu_item "$module_action_index." "${module_action_pair#*:}"
-            done
-            ui_menu_item '0.' '返回'
         fi
+        module_action_index=0
+        for module_action_pair in $MODULE_ACTION_MAP; do
+            module_action_index=$((module_action_index + 1))
+            ui_menu_item "$module_action_index." "${module_action_pair#*:}"
+        done
+        ui_menu_item '0.' '返回'
         read_key || return 1
         action_name=''
-        if [ "$action_type" = software ]; then
-            case "$READ_KEY" in
-                0) return 0 ;;
-                1) action_name=install ;;
-                2) action_name=start ;;
-                3) action_name=stop ;;
-                4) action_name=update ;;
-                5) action_name=uninstall ;;
-                6) action_name=status ;;
-                *)
-                    if input_key_is_blank "$READ_KEY"; then
-                        continue
-                    fi
-                    ui_warn '无效选择。'
+        case "$READ_KEY" in
+            0) return 0 ;;
+            *[!0-9]*)
+                if input_key_is_blank "$READ_KEY"; then
                     continue
-                    ;;
-            esac
-        else
-            case "$READ_KEY" in
-                0) return 0 ;;
-                *[!0-9]*)
-                    if input_key_is_blank "$READ_KEY"; then
-                        continue
-                    fi
-                    ui_warn '无效选择。'
-                    continue
-                    ;;
-            esac
-            module_action_index=0
-            for module_action_pair in $MODULE_ACTION_MAP; do
-                module_action_index=$((module_action_index + 1))
-                if [ "$module_action_index" = "$READ_KEY" ]; then
-                    action_name=${module_action_pair%%:*}
-                    break
                 fi
-            done
-            if [ -z "$action_name" ]; then
                 ui_warn '无效选择。'
                 continue
+                ;;
+        esac
+        module_action_index=0
+        for module_action_pair in $MODULE_ACTION_MAP; do
+            module_action_index=$((module_action_index + 1))
+            if [ "$module_action_index" = "$READ_KEY" ]; then
+                action_name=${module_action_pair%%:*}
+                break
             fi
+        done
+        if [ -z "$action_name" ]; then
+            ui_warn '无效选择。'
+            continue
         fi
         if [ "$action_name" = status ]; then
             module_status_values "$action_type" "$action_path" || true
@@ -338,6 +392,11 @@ module_actions_menu() {
             continue
         fi
         if ! loader_ensure_script "$action_path"; then
+            ui_wait_key || return 1
+            continue
+        fi
+        if ! module_ensure_dependencies "$action_type" "$action_label" "$LOADED_MODULE_PATH" "$action_name"; then
+            ui_warn '依赖语言环境未满足，本次操作已中止。'
             ui_wait_key || return 1
             continue
         fi
@@ -470,4 +529,4 @@ main_status=$?
 main_cleanup
 exit "$main_status"
 
-# Last updated: 2026-09-12 05:35
+# Last updated: 2026-09-12 07:00

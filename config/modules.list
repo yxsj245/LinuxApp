@@ -3,5 +3,6 @@ language|java|modules/language/java/module.sh|Java 开发环境
 language|nodejs|modules/language/nodejs/module.sh|Node.js 运行时
 language|go|modules/language/go/module.sh|Go 语言环境
 language|rust|modules/language/rust/module.sh|Rust 工具链
+software|deepseek-harness|modules/software/deepseek-harness/module.sh|DeepSeek Harness
 
-# Last updated: 2026-09-12 04:30
+# Last updated: 2026-09-12 06:10

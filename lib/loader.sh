@@ -131,7 +131,7 @@ loader_validate_offline() {
             missing=1
         fi
     done < "$LINUXAPP_ROOT/config/modules.list"
-    for required in config/source.sh config/modules.list lib/ui.sh lib/input.sh lib/cache.sh lib/loader.sh lib/lifecycle.sh lib/system.sh lib/privilege.sh lib/lang.sh lib/ssh_hook.sh; do
+    for required in config/source.sh config/modules.list lib/ui.sh lib/input.sh lib/cache.sh lib/loader.sh lib/lifecycle.sh lib/system.sh lib/privilege.sh lib/lang.sh lib/dependency.sh lib/ssh_hook.sh; do
         if [ ! -f "$LINUXAPP_ROOT/$required" ]; then
             ui_error "离线清单缺少框架脚本：$required"
             missing=1
@@ -140,4 +140,4 @@ loader_validate_offline() {
     return "$missing"
 }
 
-# Last updated: 2026-09-12 05:35
+# Last updated: 2026-09-12 06:10

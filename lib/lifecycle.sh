@@ -7,6 +7,15 @@ lifecycle_capabilities() {
     sh "$lifecycle_cap_path" capabilities 2>/dev/null
 }
 
+# 探测软件模块按当前状态自报的附加动作（可选动作 extras，每行「动作键|中文名」）。
+# 与 capabilities 的区别：capabilities 是静态能力声明，extras 会随模块状态变化，
+# 例如只在服务异常时才出现的「回滚」项。该动作必须是只读且快速的，框架每次渲染菜单都会调用。
+lifecycle_extras() {
+    lifecycle_ex_path=$1
+    [ -f "$lifecycle_ex_path" ] || return 1
+    sh "$lifecycle_ex_path" extras 2>/dev/null
+}
+
 lifecycle_status() {
     lifecycle_path=$1
     if [ ! -f "$lifecycle_path" ]; then
@@ -29,4 +38,4 @@ lifecycle_action() {
     sh "$lifecycle_path" "$lifecycle_action_name"
 }
 
-# Last updated: 2026-09-12 04:40
+# Last updated: 2026-09-12 06:10
