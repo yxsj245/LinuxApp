@@ -2,7 +2,7 @@
 
 LinuxApp 是一个面向 Linux 的纯 POSIX `sh` 脚本集合，用于统一管理软件、语言环境和常用系统操作。
 
-项目强调轻量、可迁移和可扩展：用户只需要运行 `main.sh`，即可进入交互式菜单；模块脚本按照统一生命周期接口工作，并支持在线加载、缓存、离线清单校验和用户级 SSH 登录钩子。
+项目强调轻量、可迁移和可扩展：用户只需要运行 `main.sh`，即可进入交互式菜单；模块脚本按照统一生命周期接口工作，并支持本地脚本同步、启动前完整性校验和用户级 SSH 登录钩子。
 
 ## 项目主页与开源地址
 
@@ -19,18 +19,27 @@ chmod +x main.sh
 ./main.sh
 ```
 
-不下载仓库也可以直接一键运行（网页“一键使用”生成的命令）。入口检测到没有本地仓库时，会按 `config/bootstrap.list` 把框架文件取回用户目录（默认 `~/.local/share/linuxapp`，可用 `LINUXAPP_HOME` 指定），模块脚本仍在菜单中按需在线加载：
+不下载仓库也可以直接一键运行（网页“一键使用”生成的命令）。入口检测到没有本地目录时，会把全部脚本一次性同步到本地副本目录（默认 `~/.local/share/linuxapp`，可用 `LINUXAPP_HOME` 指定）再以本地脚本进入菜单，运行期不再联网：
 
 ```sh
 LINUXAPP_BASE_URL=https://linuxapp.xiaozhuhouses.asia/ \
   sh -c "$(curl -fsSL https://linuxapp.xiaozhuhouses.asia/main.sh)"
 ```
 
-离线模式：
+本地副本默认缓存 1 小时：有效期内重复运行不会重新下载；超期后入口自动重新同步一次。需要立刻取回最新脚本时加 `--update`（在同步出来的本地副本目录内执行，例如 `~/.local/share/linuxapp`）：
 
 ```sh
-./main.sh -offline
+./main.sh --update
 ```
+
+一键命令的写法是把参数写在脚本名之后（管道执行时 `sh -c` 的第一个位置参数才是脚本名）：
+
+```sh
+LINUXAPP_BASE_URL=https://linuxapp.xiaozhuhouses.asia/ \
+  sh -c "$(curl -fsSL https://linuxapp.xiaozhuhouses.asia/main.sh)" linuxapp --update
+```
+
+同步失败时，只要本地已有可用副本就会警告后继续使用；本地副本首次获取失败才会退出。细节见 [使用说明](docs/使用说明.md)。
 
 SSH 登录钩子：
 
@@ -45,7 +54,7 @@ SSH 登录钩子：
 LinuxApp/
 ├── index.html                       # 静态项目主页、应用目录与一键命令
 ├── main.sh                          # 运行入口
-├── config/                          # 下载地址、模块清单与一键运行的自举清单
+├── config/                          # 同步地址、模块清单与一键运行的脚本清单
 ├── lib/                             # POSIX sh 公共库
 ├── modules/                         # 已登记的实际模块
 ├── docs/                            # 使用文档与模块开发示例
@@ -99,7 +108,7 @@ DeepSeek Harness 模块的要点：
 
 网页不依赖构建工具或后端接口。部署时请保持 `index.html` 与 `main.sh` 的相对位置不变，例如使用 Nginx、GitHub Pages、对象存储静态网站或其他静态文件服务。
 
-在线脚本默认从 `https://linuxapp.xiaozhuhouses.asia/` 加载。需要临时切换到其他镜像时，可通过 `LINUXAPP_BASE_URL` 环境变量覆盖默认地址。
+脚本同步地址默认是 `https://linuxapp.xiaozhuhouses.asia/`。需要临时切换到其他镜像时，可通过 `LINUXAPP_BASE_URL` 环境变量覆盖默认地址；地址只在入口同步脚本时使用。
 
 网页内容由 `index.html` 内的两个数据源驱动：`commands` 是“一键使用”命令清单（单列展示，一条命令一行），`moduleGroups` 是“已有应用”清单（先按模块类型分组，组内再按用途分子类，需与 `config/modules.list` 保持一致）。新增应用或命令后，请同步更新对应数组。
 

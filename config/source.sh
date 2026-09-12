@@ -1,7 +1,8 @@
 #!/bin/sh
 
-# 统一远程脚本地址。部署时可以通过环境变量覆盖。
+# 统一脚本来源地址：入口在同步阶段用它把全部脚本取回本地副本，部署时可以用环境变量覆盖。
 LINUXAPP_BASE_URL=${LINUXAPP_BASE_URL:-https://linuxapp.xiaozhuhouses.asia/}
+# 本地脚本副本的有效期（秒），默认 1 小时：有效期内入口直接使用本地副本，不再联网。
 LINUXAPP_CACHE_TTL=${LINUXAPP_CACHE_TTL:-3600}
 LINUXAPP_CONNECT_TIMEOUT=${LINUXAPP_CONNECT_TIMEOUT:-10}
 
@@ -22,13 +23,4 @@ LINUXAPP_CONNECT_TIMEOUT=${LINUXAPP_CONNECT_TIMEOUT:-10}
 # export LINUXAPP_LANG_GO_MIRROR LINUXAPP_LANG_GO_OFFICIAL LINUXAPP_LANG_GO_OFFICIAL_CN
 # export LINUXAPP_LANG_RUST_MIRROR LINUXAPP_LANG_RUST_OFFICIAL
 
-# 返回指定脚本的单独地址；没有覆盖时返回空字符串。
-linuxapp_script_override_url() {
-    case "$1" in
-        # 在此为单个脚本返回独立地址，例如：
-        # modules/software/example/module.sh) printf '%s\n' 'https://example.com/linuxapp/example-module.sh' ;;
-        *) return 0 ;;
-    esac
-}
-
-# Last updated: 2026-09-12 04:40
+# Last updated: 2026-09-12 09:34

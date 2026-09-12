@@ -1,21 +1,40 @@
 #!/bin/sh
 
-# 入口定位：本地仓库运行时按脚本所在目录解析；一键命令
+# 入口定位与本地同步：本地目录运行时按脚本所在目录解析；一键命令
 # （例如 `sh -c "$(curl -fsSL https://.../main.sh)"`）执行时 $0 不是文件路径，
-# 解析不到仓库，此时把框架文件取回用户目录，再以该目录为根目录重新执行本脚本。
-# 站点地址优先取环境变量：自举阶段还没有 config/source.sh，只能先用下面的内置默认值，
-# 自举完成后由 config/source.sh 接管（两处默认值保持一致，可继续用 LINUXAPP_BASE_URL 覆盖）。
+# 解析不到本地目录，此时把全部脚本（框架 + 模块）一次性取回用户目录，再以该目录为根目录重新执行本脚本。
+# 运行期只使用本地脚本、不再联网：模块脚本不在菜单中按需下载，全部在同步阶段落地。
+# 站点地址与本地副本有效期优先取环境变量：同步阶段还没有 config/source.sh，只能先用下面的内置默认值，
+# 进入菜单后由 config/source.sh 接管（两处默认值保持一致，可继续用环境变量覆盖）。
 LINUXAPP_BOOTSTRAP_BASE_URL=${LINUXAPP_BASE_URL:-https://linuxapp.xiaozhuhouses.asia/}
+LINUXAPP_BOOTSTRAP_CACHE_TTL=${LINUXAPP_CACHE_TTL:-3600}
+# 同步标记写在本地副本目录内：既记录本次同步时间（用于有效期判断），也用来区分
+# 「一键运行取回的本地副本」与「直接使用的本地目录」——没有标记的目录不会被执行同步。
+LINUXAPP_SYNC_STAMP='.linuxapp-sync'
 LINUXAPP_ROOT=''
 
-# 自举阶段可用的缓存目录（与 lib/cache.sh 的 cache_root 保持一致）。
-# 此时框架库还没加载，因此这里单独实现一份最小版本，只用于写自举时间标记。
-linuxapp_bootstrap_cache_root() {
-    if [ -n "${XDG_CACHE_HOME:-}" ]; then
-        printf '%s/linuxapp\n' "$XDG_CACHE_HOME"
+# 一键运行的本地副本目录：LINUXAPP_HOME 优先，其次 XDG_DATA_HOME，最后 ~/.local/share/linuxapp。
+linuxapp_home_dir() {
+    if [ -n "${LINUXAPP_HOME:-}" ]; then
+        printf '%s\n' "$LINUXAPP_HOME"
+    elif [ -n "${XDG_DATA_HOME:-}" ]; then
+        printf '%s/linuxapp\n' "$XDG_DATA_HOME"
     else
-        printf '%s/.cache/linuxapp\n' "${HOME:-.}"
+        printf '%s/.local/share/linuxapp\n' "${HOME:-.}"
     fi
+}
+
+linuxapp_sync_stamp_path() {
+    printf '%s/%s\n' "$1" "$LINUXAPP_SYNC_STAMP"
+}
+
+# 本地副本有效期（秒），默认 1 小时，与 config/source.sh 的 LINUXAPP_CACHE_TTL 保持一致。
+linuxapp_sync_ttl() {
+    lst_ttl=${LINUXAPP_CACHE_TTL:-$LINUXAPP_BOOTSTRAP_CACHE_TTL}
+    case "$lst_ttl" in
+        ''|*[!0-9]*) lst_ttl=$LINUXAPP_BOOTSTRAP_CACHE_TTL ;;
+    esac
+    printf '%s\n' "$lst_ttl"
 }
 
 # 目录内是否具备最小可运行框架文件。
@@ -23,7 +42,22 @@ linuxapp_root_usable() {
     [ -n "$1" ] && [ -f "$1/config/source.sh" ] && [ -f "$1/config/modules.list" ] && [ -f "$1/lib/ui.sh" ]
 }
 
-# 先看脚本自身目录，再看当前工作目录；两者都不成立时返回 1，交给在线自举处理。
+# 本地副本是否仍在有效期内：标记缺失、时间戳异常、系统时间回拨或已经超期都返回 1。
+linuxapp_sync_fresh() {
+    lsf_stamp=$(linuxapp_sync_stamp_path "$1")
+    lsf_saved=$(sed -n '1p' "$lsf_stamp" 2>/dev/null)
+    lsf_now=$(date +%s 2>/dev/null) || return 1
+    case "$lsf_saved" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    case "$lsf_now" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    [ "$lsf_saved" -le "$lsf_now" ] || return 1
+    [ $((lsf_now - lsf_saved)) -lt "$(linuxapp_sync_ttl)" ] 2>/dev/null
+}
+
+# 先看脚本自身目录，再看当前工作目录；两者都不成立时返回 1，交给同步阶段处理。
 linuxapp_locate_root() {
     llr_self=$0
     llr_dir=''
@@ -45,7 +79,7 @@ linuxapp_locate_root() {
 }
 
 # 下载单个文件：先写临时文件，校验成功后再原子替换目标文件。
-linuxapp_bootstrap_fetch() {
+linuxapp_sync_fetch() {
     lbf_url=$1
     lbf_target=$2
     lbf_tmp="$lbf_target.tmp.$$"
@@ -60,7 +94,7 @@ linuxapp_bootstrap_fetch() {
         wget -q --timeout="${LINUXAPP_CONNECT_TIMEOUT:-10}" -O "$lbf_tmp" "$lbf_url" 2>/dev/null
         lbf_status=$?
     else
-        printf '%s\n' '错误：系统中找不到 curl 或 wget，无法获取 LinuxApp 框架文件。' >&2
+        printf '%s\n' '错误：系统中找不到 curl 或 wget，无法获取 LinuxApp 脚本。' >&2
         printf '%s\n' '请在 LinuxApp 仓库目录内直接运行 ./main.sh。' >&2
         return 1
     fi
@@ -71,78 +105,231 @@ linuxapp_bootstrap_fetch() {
     return 1
 }
 
-# 在线自举：按 config/bootstrap.list 逐行取回框架文件，随后进入菜单。
-# 目录默认放在用户数据目录，可用 LINUXAPP_HOME 覆盖；只有框架文件会落地，
-# 模块脚本仍由 lib/loader.sh 在菜单中按需在线加载。
-linuxapp_bootstrap() {
-    lb_base=${LINUXAPP_BASE_URL:-$LINUXAPP_BOOTSTRAP_BASE_URL}
-    lb_base=${lb_base%/}
-    if [ -n "${LINUXAPP_HOME:-}" ]; then
-        lb_home=$LINUXAPP_HOME
-    elif [ -n "${XDG_DATA_HOME:-}" ]; then
-        lb_home="$XDG_DATA_HOME/linuxapp"
-    else
-        lb_home="${HOME:-.}/.local/share/linuxapp"
-    fi
-    lb_manifest="$lb_home/config/bootstrap.list"
+# 校验清单里的路径：只接受同步目录内的相对路径，避免被篡改的清单写到目录之外。
+linuxapp_sync_check_relative() {
+    lcr_rel=$1
+    case "$lcr_rel" in
+        /*|*..*)
+            printf '错误：脚本清单中存在非法路径：%s\n' "$lcr_rel" >&2
+            return 1
+            ;;
+    esac
+    return 0
+}
 
-    printf '首次运行：正在从 %s 获取 LinuxApp 文件到 %s\n' "$lb_base" "$lb_home"
-    if ! linuxapp_bootstrap_fetch "$lb_base/config/bootstrap.list" "$lb_manifest"; then
-        printf '错误：无法下载文件清单 %s/config/bootstrap.list，请检查网络后重试。\n' "$lb_base" >&2
+# 按逐行清单同步脚本（框架清单格式）。失败时把首个出错的路径写入全局 LINUXAPP_SYNC_FAILED。
+linuxapp_sync_manifest() {
+    lsm_home=$1
+    lsm_base=$2
+    lsm_file=$3
+    LINUXAPP_SYNC_FAILED=''
+    while IFS= read -r lsm_line || [ -n "$lsm_line" ]; do
+        case "$lsm_line" in
+            ''|'#'*) continue ;;
+        esac
+        if ! linuxapp_sync_check_relative "$lsm_line"; then
+            LINUXAPP_SYNC_FAILED=$lsm_line
+            return 1
+        fi
+        if ! linuxapp_sync_fetch "$lsm_base/$lsm_line" "$lsm_home/$lsm_line"; then
+            LINUXAPP_SYNC_FAILED=$lsm_line
+            return 1
+        fi
+    done < "$lsm_file"
+    return 0
+}
+
+# 同步 config/modules.list 中登记的全部模块脚本（四列格式：类型|模块 ID|相对脚本路径|显示名称）。
+# 模块清单本身由框架清单负责取回，因此这里读到的是本次部署的最新登记结果。
+linuxapp_sync_modules() {
+    lsmd_home=$1
+    lsmd_base=$2
+    lsmd_list="$lsmd_home/config/modules.list"
+    [ -f "$lsmd_list" ] || return 0
+    LINUXAPP_SYNC_FAILED=''
+    while IFS='|' read -r lsmd_type lsmd_id lsmd_path lsmd_label || [ -n "$lsmd_path" ]; do
+        case "$lsmd_type" in
+            ''|'#'*) continue ;;
+        esac
+        [ -n "$lsmd_path" ] || continue
+        if ! linuxapp_sync_check_relative "$lsmd_path"; then
+            LINUXAPP_SYNC_FAILED=$lsmd_path
+            return 1
+        fi
+        if ! linuxapp_sync_fetch "$lsmd_base/$lsmd_path" "$lsmd_home/$lsmd_path"; then
+            LINUXAPP_SYNC_FAILED=$lsmd_path
+            return 1
+        fi
+    done < "$lsmd_list"
+    return 0
+}
+
+# 全量同步：先取回框架清单与框架文件，再按取回的模块清单取回全部模块脚本。
+linuxapp_sync_pull() {
+    lsp_home=$1
+    lsp_base=$2
+    lsp_manifest="$lsp_home/config/bootstrap.list"
+
+    if ! linuxapp_sync_fetch "$lsp_base/config/bootstrap.list" "$lsp_manifest"; then
+        printf '错误：无法下载脚本清单 %s/config/bootstrap.list，请检查网络后重试。\n' "$lsp_base" >&2
         printf '%s\n' '提示：也可以先下载整个 LinuxApp 仓库，再在仓库目录内运行 ./main.sh。' >&2
         return 1
     fi
-
-    lb_failed=''
-    while IFS= read -r lb_rel || [ -n "$lb_rel" ]; do
-        case "$lb_rel" in
-            ''|'#'*) continue ;;
-        esac
-        # 清单只允许仓库内的相对路径，防止被篡改的清单写到项目目录之外。
-        case "$lb_rel" in
-            /*|*..*)
-                printf '错误：文件清单中存在非法路径：%s\n' "$lb_rel" >&2
-                return 1
-                ;;
-        esac
-        if ! linuxapp_bootstrap_fetch "$lb_base/$lb_rel" "$lb_home/$lb_rel"; then
-            lb_failed=$lb_rel
-            break
-        fi
-    done < "$lb_manifest"
-    if [ -n "$lb_failed" ]; then
-        printf '错误：下载框架文件失败：%s/%s\n' "$lb_base" "$lb_failed" >&2
-        printf '%s\n' '请检查网络连通性，或先下载整个 LinuxApp 仓库后在仓库目录内运行 ./main.sh。' >&2
+    if ! linuxapp_sync_manifest "$lsp_home" "$lsp_base" "$lsp_manifest"; then
+        printf '错误：下载框架脚本失败：%s/%s\n' "$lsp_base" "$LINUXAPP_SYNC_FAILED" >&2
+        printf '%s\n' '请检查网络连通性后重试；也可以先下载整个 LinuxApp 仓库，再在仓库目录内运行 ./main.sh。' >&2
         return 1
     fi
-    chmod +x "$lb_home/main.sh" 2>/dev/null || true
-    LINUXAPP_ROOT=$lb_home
-    # 固定加载源：框架与模块脚本必须来自同一次部署，避免混用不同站点的版本。
-    LINUXAPP_BASE_URL=$lb_base
-    export LINUXAPP_ROOT LINUXAPP_BASE_URL
-    # 记录本次部署时间到模块缓存目录：lib/loader.sh 用它判断缓存里的模块脚本是否早于本次
-    # 部署，早于则重新拉取，避免修好的模块脚本被上一轮缓存遮挡（缓存 TTL 内尤其明显）。
-    # 写不进去（例如缓存目录不可写）时静默跳过，不影响自举与菜单启动。
-    lb_cache_root=$(linuxapp_bootstrap_cache_root)
-    mkdir -p "$lb_cache_root/state" 2>/dev/null || true
-    date +%s > "$lb_cache_root/state/bootstrap.stamp" 2>/dev/null || true
-    printf '%s\n' '框架文件已就绪，正在进入 LinuxApp 菜单 ...'
-    exec sh "$lb_home/main.sh" "$@"
+    chmod +x "$lsp_home/main.sh" 2>/dev/null || true
+    if ! linuxapp_sync_modules "$lsp_home" "$lsp_base"; then
+        printf '错误：下载模块脚本失败：%s/%s\n' "$lsp_base" "$LINUXAPP_SYNC_FAILED" >&2
+        printf '%s\n' '请检查网络连通性后重试；也可以先下载整个 LinuxApp 仓库，再在仓库目录内运行 ./main.sh。' >&2
+        return 1
+    fi
+    return 0
 }
 
-if ! linuxapp_locate_root; then
-    linuxapp_bootstrap "$@" || exit 1
-fi
+# 写入同步标记：第一行为同步时间（秒），第二行为本次使用的站点地址，便于排查脚本来源。
+linuxapp_sync_write_stamp() {
+    lws_stamp=$(linuxapp_sync_stamp_path "$1")
+    lws_tmp="$lws_stamp.tmp.$$"
+    lws_now=$(date +%s 2>/dev/null) || return 1
+    case "$lws_now" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    mkdir -p "$(dirname "$lws_stamp")" 2>/dev/null || return 1
+    printf '%s\n%s\n' "$lws_now" "$2" > "$lws_tmp" 2>/dev/null || {
+        rm -f "$lws_tmp"
+        return 1
+    }
+    mv "$lws_tmp" "$lws_stamp" 2>/dev/null || {
+        rm -f "$lws_tmp"
+        return 1
+    }
+    return 0
+}
+
+# 清理在线模式遗留的脚本缓存目录：新版本把全部脚本同步到本地副本，该目录已不再使用。
+linuxapp_sync_clean_legacy() {
+    if [ -n "${XDG_CACHE_HOME:-}" ]; then
+        lsl_dir="$XDG_CACHE_HOME/linuxapp/scripts"
+    else
+        lsl_dir="${HOME:-.}/.cache/linuxapp/scripts"
+    fi
+    # 只删除绝对路径且以 /linuxapp/scripts 结尾的目录，避免误删其它位置。
+    case "$lsl_dir" in
+        /*/linuxapp/scripts) rm -rf "$lsl_dir" 2>/dev/null || true ;;
+    esac
+    return 0
+}
+
+# 执行同步并按需重新执行本脚本。$1 同步目录，$2 同步原因，$3.. 原始参数。
+# 成功时一定以本地脚本重新执行（exec），不会返回；只有拿不到可用脚本时才返回 1。
+linuxapp_sync_run() {
+    lsr_home=$1
+    lsr_reason=$2
+    shift 2
+    lsr_base=${LINUXAPP_BASE_URL:-$LINUXAPP_BOOTSTRAP_BASE_URL}
+    lsr_base=${lsr_base%/}
+
+    case "$lsr_reason" in
+        force) printf '正在按 --update 重新拉取 LinuxApp 脚本：%s\n' "$lsr_base" ;;
+        stale) printf '本地脚本副本已超过 %s 秒有效期，正在从 %s 更新到 %s\n' "$(linuxapp_sync_ttl)" "$lsr_base" "$lsr_home" ;;
+        *) printf '正在从 %s 获取 LinuxApp 脚本到 %s\n' "$lsr_base" "$lsr_home" ;;
+    esac
+
+    if linuxapp_sync_pull "$lsr_home" "$lsr_base"; then
+        linuxapp_sync_write_stamp "$lsr_home" "$lsr_base" || \
+            printf '%s\n' '警告：无法写入同步标记，本次同步时间未能记录。' >&2
+        linuxapp_sync_clean_legacy
+    else
+        # 已经有一份可用副本时降级为继续使用本地副本，避免断网的机器无法进入菜单。
+        if ! linuxapp_root_usable "$lsr_home" || [ ! -f "$(linuxapp_sync_stamp_path "$lsr_home")" ]; then
+            return 1
+        fi
+        printf '%s\n' '警告：同步失败，继续使用本地已有的脚本副本（可能不是最新）。' >&2
+        # 交给本地副本继续运行时禁止它再次联网，避免同步失败时反复重试。
+        LINUXAPP_SYNC_SKIP=1
+        export LINUXAPP_SYNC_SKIP
+    fi
+
+    printf '%s\n' '脚本已就绪，正在进入 LinuxApp 菜单 ...'
+    # 用本地脚本重新执行：既让刚取回的代码生效，也统一去掉只作用于同步阶段的 --update。
+    lsr_count=$#
+    lsr_index=0
+    while [ "$lsr_index" -lt "$lsr_count" ]; do
+        lsr_arg=$1
+        shift
+        case "$lsr_arg" in
+            -update|--update) : ;;
+            *) set -- "$@" "$lsr_arg" ;;
+        esac
+        lsr_index=$((lsr_index + 1))
+    done
+    exec sh "$lsr_home/main.sh" "$@"
+}
+
+# 入口准备：定位本地目录；本地副本超过有效期或收到 --update 时重新同步全部脚本。
+# 返回 0 表示当前进程可以直接使用 LINUXAPP_ROOT 继续运行。
+linuxapp_entry() {
+    le_force=0
+    for le_arg in "$@"; do
+        case "$le_arg" in
+            -update|--update) le_force=1 ;;
+        esac
+    done
+
+    # 上一次同步失败后已经降级使用本地副本，本次不再重复联网。
+    if [ "${LINUXAPP_SYNC_SKIP:-0}" = 1 ]; then
+        linuxapp_locate_root || return 1
+        return 0
+    fi
+
+    if linuxapp_locate_root; then
+        # 没有同步标记的目录是仓库目录或用户自备的本地目录：脚本直接来自该目录，不做同步。
+        if [ ! -f "$(linuxapp_sync_stamp_path "$LINUXAPP_ROOT")" ]; then
+            return 0
+        fi
+        # 带标记的目录是一键运行取回的本地副本：有效期内直接用，过期或 --update 时重新同步。
+        if [ "$le_force" -eq 0 ] && linuxapp_sync_fresh "$LINUXAPP_ROOT"; then
+            return 0
+        fi
+        le_home=$LINUXAPP_ROOT
+    else
+        le_home=$(linuxapp_home_dir)
+        # 本地副本仍然有效时直接用本地副本重新执行，不联网。
+        if [ "$le_force" -eq 0 ] && linuxapp_root_usable "$le_home" && linuxapp_sync_fresh "$le_home"; then
+            exec sh "$le_home/main.sh" "$@"
+        fi
+    fi
+
+    # 同步原因只用于给出准确的中文提示：--update 强制更新、已有副本超期、首次获取。
+    if [ "$le_force" -eq 1 ]; then
+        le_reason=force
+    elif [ -f "$(linuxapp_sync_stamp_path "$le_home")" ]; then
+        le_reason=stale
+    else
+        le_reason=first
+    fi
+
+    linuxapp_sync_run "$le_home" "$le_reason" "$@"
+    # linuxapp_sync_run 成功时必然 exec，走到这里说明同步失败且没有可用副本。
+    return 1
+}
+
+linuxapp_entry "$@" || exit 1
 export LINUXAPP_ROOT
 
-LINUXAPP_OFFLINE=0
 # 状态行第四列（凭证等敏感字段）默认显示明文：带 token 的访问地址如果被遮住，用户无法直接打开界面。
 # 需要隐藏时用 --hide-secrets；该变量会导出给模块，模块内的同类显示（如 DeepSeek Harness 的访问地址）也遵循它。
 LINUXAPP_SHOW_SECRETS=1
+# --update 只作用于同步阶段。走到参数解析说明当前脚本直接来自本地目录，入口没有执行同步，
+# 此时记录标记，等界面初始化后再提示用户。
+LINUXAPP_UPDATE_NOTICE=0
 LINUXAPP_SPECIAL_ACTION=''
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        -offline) LINUXAPP_OFFLINE=1 ;;
+        -update|--update) LINUXAPP_UPDATE_NOTICE=1 ;;
         --show-secrets) LINUXAPP_SHOW_SECRETS=1 ;;
         --hide-secrets) LINUXAPP_SHOW_SECRETS=0 ;;
         --install-ssh-hook|--remove-ssh-hook)
@@ -153,9 +340,11 @@ while [ "$#" -gt 0 ]; do
             LINUXAPP_SPECIAL_ACTION=$1
             ;;
         --help|-h)
-            printf '%s\n' '用法：main.sh [-offline] [--show-secrets|--hide-secrets]'
+            printf '%s\n' '用法：main.sh [--update] [--show-secrets|--hide-secrets]'
             printf '%s\n' '       main.sh --install-ssh-hook'
             printf '%s\n' '       main.sh --remove-ssh-hook'
+            printf '%s\n' ''
+            printf '%s\n' '--update   忽略本地副本有效期，重新拉取全部脚本后再进入菜单'
             exit 0
             ;;
         *)
@@ -184,12 +373,12 @@ case "$LINUXAPP_SPECIAL_ACTION" in
         exit $?
         ;;
 esac
-export LINUXAPP_OFFLINE LINUXAPP_SHOW_SECRETS
+export LINUXAPP_SHOW_SECRETS
 
 . "$LINUXAPP_ROOT/config/source.sh" || exit 1
 . "$LINUXAPP_ROOT/lib/ui.sh" || exit 1
 . "$LINUXAPP_ROOT/lib/input.sh" || exit 1
-. "$LINUXAPP_ROOT/lib/cache.sh" || exit 1
+. "$LINUXAPP_ROOT/lib/state.sh" || exit 1
 . "$LINUXAPP_ROOT/lib/system.sh" || exit 1
 . "$LINUXAPP_ROOT/lib/privilege.sh" || exit 1
 . "$LINUXAPP_ROOT/lib/lifecycle.sh" || exit 1
@@ -197,7 +386,7 @@ export LINUXAPP_OFFLINE LINUXAPP_SHOW_SECRETS
 . "$LINUXAPP_ROOT/lib/ssh_hook.sh" || exit 1
 . "$LINUXAPP_ROOT/lib/loader.sh" || exit 1
 
-LINUXAPP_STATE_DIR=$(cache_root)/state
+LINUXAPP_STATE_DIR=$(state_dir)
 export LINUXAPP_STATE_DIR
 
 CHILD_RUNNING=0
@@ -362,7 +551,7 @@ EOF
     return "$rma_status"
 }
 
-# 把模块脚本路径解析为绝对路径：仓库内相对路径优先，其次使用缓存脚本。
+# 把模块脚本路径解析为绝对路径：绝对路径原样返回，相对路径拼到本地目录。
 module_resolve_path() {
     mrp_input=$1
     case "$mrp_input" in
@@ -371,11 +560,7 @@ module_resolve_path() {
             return 0
             ;;
     esac
-    if [ -f "$LINUXAPP_ROOT/$mrp_input" ]; then
-        printf '%s\n' "$LINUXAPP_ROOT/$mrp_input"
-        return 0
-    fi
-    cache_script_path "$mrp_input"
+    printf '%s\n' "$LINUXAPP_ROOT/$mrp_input"
 }
 
 # 语言模块的动作列表：基础动作加上模块自报的可选能力（切换版本、更新）。
@@ -690,9 +875,12 @@ main_loop() {
 }
 
 ui_init
-if [ "$LINUXAPP_OFFLINE" -eq 1 ]; then
-    loader_validate_offline || exit 1
+if [ "$LINUXAPP_UPDATE_NOTICE" -eq 1 ]; then
+    ui_warn "--update 只对一键运行取回的本地副本生效；当前脚本直接来自 $LINUXAPP_ROOT，未执行同步。"
+    ui_text '本地仓库内的更新请执行 git pull 后重新运行。'
 fi
+# 全部脚本都在同步阶段落地本机，运行期不再联网，因此这里按清单检查一遍再进入菜单。
+loader_validate_local || exit 1
 if ! input_is_interactive; then
     ui_error 'main.sh 菜单必须在交互式终端中运行。需要自动化调用时请使用模块脚本接口。'
     exit 1
@@ -703,4 +891,4 @@ main_status=$?
 main_cleanup
 exit "$main_status"
 
-# Last updated: 2026-09-12 08:53
+# Last updated: 2026-09-12 09:34

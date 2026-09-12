@@ -240,7 +240,7 @@
         <section class="shell hero">
             <div class="eyebrow">POSIX shell toolkit</div>
             <h1>把 Linux 环境<br><em>交给脚本。</em></h1>
-            <p class="hero-copy">LinuxApp 是一个面向 Linux 的纯 POSIX sh 脚本集合，提供统一入口、交互式菜单、在线加载、离线校验和可扩展的生命周期模块。</p>
+            <p class="hero-copy">LinuxApp 是一个面向 Linux 的纯 POSIX sh 脚本集合，提供统一入口、交互式菜单、本地脚本同步和可扩展的生命周期模块。</p>
             <div class="hero-actions">
                 <a class="button primary" href="#scripts">浏览已有应用 ↓</a>
                 <a class="button" href="https://github.com/yxsj245/LinuxApp" target="_blank" rel="noreferrer">开源仓库 ↗</a>
@@ -271,7 +271,7 @@
             </div>
             <div class="section-heading subsection">
                 <h2>已有应用</h2>
-                <p>按模块类型与用途分组登记：软件模块把应用注册为 systemd 服务并管理版本与回滚，语言模块安装后自动接入环境变量与命令入口。卡片中的直调命令需在 LinuxApp 仓库目录内执行，完整清单见 <code>config/modules.list</code>。</p>
+                <p>按模块类型与用途分组登记：软件模块把应用注册为 systemd 服务并管理版本与回滚，语言模块安装后自动接入环境变量与命令入口。卡片中的直调命令需要在 LinuxApp 目录内执行（仓库目录，或一键运行同步出来的本地副本目录，例如 ~/.local/share/linuxapp），完整清单见 <code>config/modules.list</code>。</p>
             </div>
             <div class="catalog-shell">
                 <div class="catalog-toolbar"><code id="module-count">modules / loading...</code><span class="catalog-hint">菜单路径：应用管理 → 软件模块 / 语言模块</span></div>
@@ -289,8 +289,9 @@
     <script>
         // 一键使用命令清单：{base} 会替换为当前静态站点地址；列表为单列，每条命令占一行。
         const commands = [
-            { name: '一键使用', kicker: '01 / MAIN ENTRY', description: '从当前静态站点获取最新入口，自动把框架文件取回本地后打开 LinuxApp 交互式应用管理菜单。', command: 'LINUXAPP_BASE_URL={base} sh -c "$(curl -fsSL {base}main.sh)"' },
-            { name: '自定义存放目录', kicker: '02 / HOME DIR', description: '把框架文件固定下载到指定目录，便于统一管理（默认 ~/.local/share/linuxapp）。', command: 'LINUXAPP_HOME=/opt/linuxapp LINUXAPP_BASE_URL={base} sh -c "$(curl -fsSL {base}main.sh)"' }
+            { name: '一键使用', kicker: '01 / MAIN ENTRY', description: '从当前静态站点把全部脚本同步到本地（默认 ~/.local/share/linuxapp）后打开 LinuxApp 交互式应用管理菜单；本地副本 1 小时内重复运行不会重新下载。', command: 'LINUXAPP_BASE_URL={base} sh -c "$(curl -fsSL {base}main.sh)"' },
+            { name: '强制更新脚本', kicker: '02 / UPDATE', description: '忽略本地副本 1 小时的有效期，立刻重新拉取全部脚本再进入菜单；同步失败时继续使用本地已有副本。命令末尾的 linuxapp 是管道执行时的脚本名占位，--update 会传给入口。', command: 'LINUXAPP_BASE_URL={base} sh -c "$(curl -fsSL {base}main.sh)" linuxapp --update' },
+            { name: '自定义存放目录', kicker: '03 / HOME DIR', description: '把脚本固定同步到指定目录，便于统一管理（默认 ~/.local/share/linuxapp）。', command: 'LINUXAPP_HOME=/opt/linuxapp LINUXAPP_BASE_URL={base} sh -c "$(curl -fsSL {base}main.sh)"' }
         ];
 
         // 已有应用清单：与 config/modules.list 同步，新增模块后在此登记并归入对应分类。
