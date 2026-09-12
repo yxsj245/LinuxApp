@@ -101,7 +101,7 @@ DeepSeek Harness 模块的要点：
 
 在线脚本默认从 `https://linuxapp.xiaozhuhouses.asia/` 加载。需要临时切换到其他镜像时，可通过 `LINUXAPP_BASE_URL` 环境变量覆盖默认地址。
 
-网页内容由 `index.html` 内的两个数组驱动：`apps` 是“一键使用”命令清单，`modules` 是“已有应用”清单（需与 `config/modules.list` 保持一致）。新增应用或命令后，请同步更新对应数组。
+网页内容由 `index.html` 内的两个数据源驱动：`commands` 是“一键使用”命令清单（单列展示，一条命令一行），`moduleGroups` 是“已有应用”清单（先按模块类型分组，组内再按用途分子类，需与 `config/modules.list` 保持一致）。新增应用或命令后，请同步更新对应数组。
 
 ## 兼容性
 

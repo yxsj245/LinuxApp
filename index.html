@@ -147,6 +147,7 @@
         .section-heading.subsection { margin-top: 76px; }
         .section-heading h2 { margin: 0; font-size: clamp(30px, 4vw, 48px); letter-spacing: -.045em; }
         .section-heading p { max-width: 460px; margin: 0; color: var(--muted); font-size: 14px; }
+        .section-heading p code { color: var(--blue); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
 
         .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 
@@ -160,21 +161,44 @@
         .catalog-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 20px; border-bottom: 1px solid var(--line); }
         .catalog-toolbar code { color: var(--acid); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; }
         .catalog-hint { color: var(--muted); font-size: 13px; }
-        .app-list { display: grid; grid-template-columns: repeat(2, 1fr); }
-        .empty-apps { grid-column: 1 / -1; padding: 34px 22px; color: var(--muted); font-size: 14px; }
+        /* 已有应用：先按模块类型分组，组内再按用途分子类。 */
+        .module-group { padding: 24px 22px 26px; }
+        .module-group + .module-group { border-top: 1px solid var(--line); }
+        .module-group-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px; margin-bottom: 18px; }
+        .module-group-head h3 { margin: 0; font-size: 22px; letter-spacing: -.025em; }
+        .module-group-head p { flex: 1 1 420px; margin: 0; color: var(--muted); font-size: 13px; }
+        .group-kicker { color: var(--acid); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+        .group-count { padding: 2px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; }
 
-        .app-item { display: flex; flex-direction: column; justify-content: space-between; gap: 25px; min-height: 220px; padding: 22px; border-bottom: 1px solid var(--line); }
+        .module-sub + .module-sub { margin-top: 20px; }
+        .module-sub-title { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin: 0 0 10px; font-size: 15px; }
+        .module-sub-title::before { width: 3px; height: 15px; content: ""; border-radius: 2px; background: var(--acid); }
+        .module-sub-title small { color: var(--muted); font-size: 12px; font-weight: 400; }
+
+        .app-list { display: grid; grid-template-columns: repeat(2, 1fr); overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: rgba(0, 0, 0, .16); }
+        .empty-apps { padding: 34px 22px; color: var(--muted); font-size: 14px; }
+
+        .app-item { display: flex; flex-direction: column; justify-content: space-between; gap: 22px; min-height: 200px; padding: 20px; border-bottom: 1px solid var(--line); }
         .app-item:nth-child(odd) { border-right: 1px solid var(--line); }
         /* 卡片数量为偶数时，最后两格是同一行；为奇数时只有最后一格，需要单独收掉分隔线。 */
         .app-list[data-parity="even"] .app-item:nth-last-child(-n + 2) { border-bottom: 0; }
         .app-list[data-parity="odd"] .app-item:last-child { border-bottom: 0; border-right: 0; }
         .app-kicker { color: var(--orange); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
-        .app-item h3 { margin: 11px 0 6px; font-size: 21px; }
+        .app-item h3 { margin: 10px 0 6px; font-size: 20px; }
         .app-item p { margin: 0; color: var(--muted); font-size: 13px; }
+        .app-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+        .app-tags span { padding: 2px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; }
         .command-box { display: flex; align-items: center; gap: 8px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 9px; background: rgba(0, 0, 0, .18); }
         .command-box code { overflow: hidden; flex: 1; color: var(--blue); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
         .command-box button { flex: 0 0 auto; min-height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: transparent; font: inherit; font-size: 11px; cursor: pointer; }
         .command-box button:hover { border-color: var(--acid); color: var(--acid); }
+
+        /* 一键使用：单列清单，一条命令占一行；命令过长时换行完整显示，不省略。 */
+        .command-list { display: grid; grid-template-columns: 1fr; }
+        .command-list .app-item { min-height: 0; border-right: 0; }
+        .command-list .app-item:last-child { border-bottom: 0; }
+        .command-list .command-box { align-items: flex-start; }
+        .command-list .command-box code { overflow: visible; text-overflow: clip; white-space: pre-wrap; word-break: break-all; }
 
         .footer { display: flex; justify-content: space-between; gap: 18px; padding: 28px 0 42px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
         .footer a { color: var(--acid); text-decoration: none; }
@@ -190,9 +214,12 @@
             .hero-note { position: static; width: 100%; margin-top: 42px; }
             .feature-grid, .app-list { grid-template-columns: 1fr; }
             .feature-card:nth-child(2) { transform: none; }
+            .module-group { padding: 20px 16px 22px; }
+            .module-group-head p { flex-basis: 100%; }
             .app-item:nth-child(odd) { border-right: 0; }
             .app-list[data-parity="even"] .app-item:nth-last-child(-n + 2) { border-bottom: 1px solid var(--line); }
-            .app-item:last-child { border-bottom: 0; }
+            .app-list[data-parity] .app-item:last-child { border-bottom: 0; }
+            .app-item { min-height: 0; }
             .section-heading { display: block; }
             .section-heading p { margin-top: 12px; }
             .footer { display: block; }
@@ -236,19 +263,19 @@
         <section id="scripts" class="shell section">
             <div class="section-heading">
                 <h2>一键使用</h2>
-                <p>复制主入口命令到 Linux 终端，从当前静态站点启动 LinuxApp。</p>
+                <p>复制主入口命令到 Linux 终端，从当前静态站点启动 LinuxApp。一条命令占一行，点击“复制命令”即可粘贴执行。</p>
             </div>
             <div class="catalog-shell">
-                <div class="catalog-toolbar"><code id="catalog-count">apps / loading...</code><span class="catalog-hint">命令地址基于当前站点自动生成</span></div>
-                <div id="app-list" class="app-list"></div>
+                <div class="catalog-toolbar"><code id="catalog-count">commands / loading...</code><span class="catalog-hint">命令地址基于当前站点自动生成</span></div>
+                <div id="command-list" class="command-list"></div>
             </div>
             <div class="section-heading subsection">
                 <h2>已有应用</h2>
-                <p>已登记的软件模块与语言环境模块：软件模块把应用注册为 systemd 服务并管理版本与回滚，语言模块安装后自动接入环境变量与命令入口。卡片中的直调命令需在 LinuxApp 仓库目录内执行。</p>
+                <p>按模块类型与用途分组登记：软件模块把应用注册为 systemd 服务并管理版本与回滚，语言模块安装后自动接入环境变量与命令入口。卡片中的直调命令需在 LinuxApp 仓库目录内执行，完整清单见 <code>config/modules.list</code>。</p>
             </div>
             <div class="catalog-shell">
                 <div class="catalog-toolbar"><code id="module-count">modules / loading...</code><span class="catalog-hint">菜单路径：应用管理 → 软件模块 / 语言模块</span></div>
-                <div id="module-list" class="app-list"></div>
+                <div id="module-groups"></div>
             </div>
         </section>
     </main>
@@ -260,23 +287,56 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script>
-        // 一键使用命令清单：{base} 会替换为当前静态站点地址。
-        const apps = [
+        // 一键使用命令清单：{base} 会替换为当前静态站点地址；列表为单列，每条命令占一行。
+        const commands = [
             { name: '一键使用', kicker: '01 / MAIN ENTRY', description: '从当前静态站点获取最新入口，自动把框架文件取回本地后打开 LinuxApp 交互式应用管理菜单。', command: 'LINUXAPP_BASE_URL={base} sh -c "$(curl -fsSL {base}main.sh)"' },
             { name: '自定义存放目录', kicker: '02 / HOME DIR', description: '把框架文件固定下载到指定目录，便于统一管理（默认 ~/.local/share/linuxapp）。', command: 'LINUXAPP_HOME=/opt/linuxapp LINUXAPP_BASE_URL={base} sh -c "$(curl -fsSL {base}main.sh)"' }
         ];
 
-        // 已有应用清单：与 config/modules.list 同步，新增模块后在此补充。
-        const modules = [
-            { name: 'DeepSeek Harness', kicker: 'SOFTWARE / 01', description: '注册为 systemd 服务并开机自启；服务固定使用精确版本，更新先提示插件风险，失败不自动回滚、可直接回滚到上一版本。', command: 'sh modules/software/deepseek-harness/module.sh status' },
-            { name: 'Java 开发环境', kicker: 'LANGUAGE / 01', description: 'Temurin JDK：安装、切换版本、更新（补丁或大版本）、修复环境、按版本卸载。', command: 'sh modules/language/java/module.sh status' },
-            { name: 'Node.js 运行时', kicker: 'LANGUAGE / 02', description: '多版本共存：安装、切换版本、更新、修复环境、按版本卸载（输入 a 卸载全部）。', command: 'sh modules/language/nodejs/module.sh status' },
-            { name: 'Go 语言环境', kicker: 'LANGUAGE / 03', description: '安装、更新、修复环境、按版本卸载，安装源可选官方源或国内代理。', command: 'sh modules/language/go/module.sh status' },
-            { name: 'Rust 工具链', kicker: 'LANGUAGE / 04', description: '基于 rustup：安装、更新、修复环境，卸载时按工具链选择。', command: 'sh modules/language/rust/module.sh status' }
+        // 已有应用清单：与 config/modules.list 同步，新增模块后在此登记并归入对应分类。
+        // 层级为「分组（模块类型）→ 子类（用途）→ 应用卡片」，组与子类的数量由实际卡片自动统计。
+        const moduleGroups = [
+            {
+                kicker: 'SOFTWARE',
+                name: '软件模块',
+                description: '把应用注册为 systemd 服务，负责安装、启停、更新、回滚、日志与状态查询。',
+                subs: [
+                    {
+                        name: '服务型应用',
+                        note: '常驻后台并随系统启动',
+                        items: [
+                            { name: 'DeepSeek Harness', kicker: 'SOFTWARE · DEEPSEEK-HARNESS', description: '注册为 systemd 服务并开机自启；服务固定使用精确版本，更新先提示插件风险，失败不自动回滚、可直接回滚到上一版本。', tags: ['systemd 服务', '开机自启', '支持回滚', '依赖 Node.js'], command: 'sh modules/software/deepseek-harness/module.sh status' }
+                        ]
+                    }
+                ]
+            },
+            {
+                kicker: 'LANGUAGE',
+                name: '语言环境模块',
+                description: '安装语言运行时或工具链，并自动接入环境变量与命令入口，多版本可以共存。',
+                subs: [
+                    {
+                        name: '运行时与虚拟机',
+                        note: '提供程序运行环境',
+                        items: [
+                            { name: 'Java 开发环境', kicker: 'LANGUAGE · JAVA', description: 'Temurin JDK：安装、切换版本、更新（补丁或大版本）、修复环境、按版本卸载。', tags: ['Temurin JDK', '多版本共存', '自动接入环境'], command: 'sh modules/language/java/module.sh status' },
+                            { name: 'Node.js 运行时', kicker: 'LANGUAGE · NODEJS', description: '多版本共存：安装、切换版本、更新、修复环境、按版本卸载（输入 a 卸载全部）。', tags: ['多版本共存', '自动接入环境', '镜像源可选'], command: 'sh modules/language/nodejs/module.sh status' }
+                        ]
+                    },
+                    {
+                        name: '编译器工具链',
+                        note: '自带编译器与依赖管理',
+                        items: [
+                            { name: 'Go 语言环境', kicker: 'LANGUAGE · GO', description: '安装、更新、修复环境、按版本卸载，安装源可选官方源或国内代理。', tags: ['官方源 / 国内代理', '按版本卸载', '自动接入环境'], command: 'sh modules/language/go/module.sh status' },
+                            { name: 'Rust 工具链', kicker: 'LANGUAGE · RUST', description: '基于 rustup：安装、更新、修复环境，卸载时按工具链选择。', tags: ['rustup 管理', '按工具链卸载', '镜像源可选'], command: 'sh modules/language/rust/module.sh status' }
+                        ]
+                    }
+                ]
+            }
         ];
 
-        const list = document.querySelector('#app-list');
-        const moduleList = document.querySelector('#module-list');
+        const commandList = document.querySelector('#command-list');
+        const moduleGroupsRoot = document.querySelector('#module-groups');
         const count = document.querySelector('#catalog-count');
         const moduleCount = document.querySelector('#module-count');
         const toast = document.querySelector('#toast');
@@ -284,45 +344,83 @@
 
         const base = baseUrl.href;
 
-        // 渲染命令清单：命令中的 {base} 占位符替换为当前站点地址。
-        function renderCatalog(container, items) {
-            // 卡片数量决定最后一行有几格，供 CSS 收敛分隔线。
-            container.dataset.parity = items.length % 2 === 0 ? 'even' : 'odd';
-            if (!items.length) {
-                const empty = document.createElement('div');
-                empty.className = 'empty-apps';
-                empty.textContent = '当前暂无已发布应用。';
-                container.appendChild(empty);
-                return;
-            }
-            items.forEach((item) => {
-                const command = item.command.split('{base}').join(base);
-                const node = document.createElement('article');
-                node.className = 'app-item';
-                node.innerHTML = `
-                    <div>
-                        <div class="app-kicker">${item.kicker}</div>
-                        <h3>${item.name}</h3>
-                        <p>${item.description}</p>
-                    </div>
-                    <div class="command-box">
-                        <code></code>
-                        <button type="button">复制命令</button>
-                    </div>
-                `;
-                const commandCode = node.querySelector('code');
-                const copyButton = node.querySelector('button');
-                commandCode.textContent = command;
-                commandCode.title = command;
-                copyButton.dataset.copy = command;
-                container.appendChild(node);
-            });
+        // 创建元素的小工具：类名与文本都通过参数写入，避免拼接 HTML。
+        function el(tag, className, text) {
+            const node = document.createElement(tag);
+            if (className) node.className = className;
+            if (text !== undefined && text !== null) node.textContent = text;
+            return node;
         }
 
-        renderCatalog(list, apps);
-        renderCatalog(moduleList, modules);
-        count.textContent = `apps / ${apps.length} command`;
-        moduleCount.textContent = `modules / ${modules.length} app`;
+        // 创建单张应用卡片：上方是名称、说明与标签，下方是命令与复制按钮。
+        function createAppItem(item) {
+            const command = item.command.split('{base}').join(base);
+            const node = el('article', 'app-item');
+            const body = el('div');
+            body.appendChild(el('div', 'app-kicker', item.kicker));
+            body.appendChild(el('h3', null, item.name));
+            body.appendChild(el('p', null, item.description));
+            if (item.tags && item.tags.length) {
+                const tags = el('div', 'app-tags');
+                item.tags.forEach((tag) => tags.appendChild(el('span', null, tag)));
+                body.appendChild(tags);
+            }
+            const box = el('div', 'command-box');
+            const code = el('code', null, command);
+            code.title = command;
+            const button = el('button', null, '复制命令');
+            button.type = 'button';
+            button.dataset.copy = command;
+            box.appendChild(code);
+            box.appendChild(button);
+            node.appendChild(body);
+            node.appendChild(box);
+            return node;
+        }
+
+        // 渲染一键使用清单：单列布局，一条命令占一行。
+        function renderCommands(container, items) {
+            if (!items.length) {
+                container.appendChild(el('div', 'empty-apps', '当前暂无可用命令。'));
+                return;
+            }
+            items.forEach((item) => container.appendChild(createAppItem(item)));
+        }
+
+        // 渲染已有应用清单：分组 → 子类 → 卡片网格，返回登记的应用总数。
+        function renderModuleGroups(container, groups) {
+            let total = 0;
+            groups.forEach((group) => {
+                const section = el('section', 'module-group');
+                const head = el('div', 'module-group-head');
+                head.appendChild(el('span', 'group-kicker', group.kicker));
+                head.appendChild(el('h3', null, group.name));
+                head.appendChild(el('p', null, group.description));
+                section.appendChild(head);
+                group.subs.forEach((sub) => {
+                    const box = el('div', 'module-sub');
+                    const title = el('h4', 'module-sub-title', sub.name);
+                    if (sub.note) title.appendChild(el('small', null, sub.note));
+                    title.appendChild(el('span', 'group-count', `${sub.items.length} 个`));
+                    box.appendChild(title);
+                    const list = el('div', 'app-list');
+                    // 卡片数量决定最后一行占几格，供 CSS 收敛分隔线。
+                    list.dataset.parity = sub.items.length % 2 === 0 ? 'even' : 'odd';
+                    sub.items.forEach((item) => list.appendChild(createAppItem(item)));
+                    total += sub.items.length;
+                    box.appendChild(list);
+                    section.appendChild(box);
+                });
+                container.appendChild(section);
+            });
+            if (!total) container.appendChild(el('div', 'empty-apps', '当前暂无已发布应用。'));
+            return total;
+        }
+
+        renderCommands(commandList, commands);
+        const moduleTotal = renderModuleGroups(moduleGroupsRoot, moduleGroups);
+        count.textContent = `commands / ${commands.length}`;
+        moduleCount.textContent = `modules / ${moduleTotal} · groups / ${moduleGroups.length}`;
 
         function showToast(message) {
             toast.textContent = message;
